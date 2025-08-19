@@ -200,89 +200,30 @@ export class GHL {
       // Extrai os dados da resposta
       const tokenData = resp.data;
       
-      // Determina o resourceId baseado na resposta
-      let resourceId: string;
-      let userType: string;
-      let finalLocationId: string | null = null;
-      
-      if (tokenData.locationId) {
-        resourceId = tokenData.locationId;
-        userType = 'Location';
-        finalLocationId = tokenData.locationId;
-        console.log('📍 Instalação de Localização detectada');
-      } else if (tokenData.companyId) {
-        resourceId = tokenData.companyId;
-        userType = 'Company';
-        console.log('🏢 Instalação de Empresa detectada');
-        
-        // Para instalações de empresa, tenta buscar usuários para extrair locationId
-        try {
-          console.log('🔍 Buscando usuários da empresa para identificar localização...');
-          const usersResp = await axios.get(
-            `${process.env.GHL_API_DOMAIN}/users/search`,
-            {
-              params: {
-                companyId: tokenData.companyId
-              },
-              headers: {
-                'Authorization': `Bearer ${tokenData.access_token}`,
-                'Version': '2021-07-28'
-              }
-            }
-          );
-          
-          console.log('📡 Usuários encontrados:', usersResp.data);
-          
-          if (usersResp.data.users && usersResp.data.users.length > 0) {
-            // Procura por um usuário que tenha locationId
-            const userWithLocation = usersResp.data.users.find((user: any) => user.locationId);
-            if (userWithLocation && userWithLocation.locationId) {
-              finalLocationId = userWithLocation.locationId;
-              console.log('📍 LocationId identificado através do usuário:', finalLocationId);
-              console.log('👤 Usuário:', userWithLocation.firstName, userWithLocation.lastName);
-            } else {
-              console.log('⚠️ Nenhum usuário com locationId encontrado');
-            }
-          } else {
-            console.log('⚠️ Nenhum usuário encontrado para a empresa');
-          }
-        } catch (usersError: any) {
-          console.error('❌ Erro ao buscar usuários:', usersError?.response?.data || usersError);
-          console.log('⚠️ Tentando buscar informações da empresa...');
-          
-          // Tenta buscar informações da empresa diretamente
-          try {
-            const companyResp = await axios.get(
-              `${process.env.GHL_API_DOMAIN}/companies/${tokenData.companyId}`,
-              {
-                headers: {
-                  'Authorization': `Bearer ${tokenData.access_token}`,
-                  'Version': '2021-07-28'
-                }
-              }
-            );
-            
-            console.log('📡 Informações da empresa:', companyResp.data);
-            
-            // Se a empresa tiver um locationId padrão
-            if (companyResp.data.company && companyResp.data.company.locationId) {
-              finalLocationId = companyResp.data.company.locationId;
-              console.log('📍 LocationId da empresa:', finalLocationId);
-            }
-          } catch (companyError: any) {
-            console.error('❌ Erro ao buscar informações da empresa:', companyError?.response?.data || companyError);
-            console.log('⚠️ Continuando sem locationId específico');
-          }
-        }
-      } else {
-        console.error('❌ Nenhum locationId ou companyId encontrado na resposta');
-        throw new Error('Resposta da API não contém locationId ou companyId');
+      // Para integração com Evolution API, precisamos SEMPRE de um locationId
+      // O app deve ser instalado diretamente na subconta (location), não na empresa
+      if (!tokenData.locationId) {
+        console.error('❌ ERRO: Esta instalação não tem locationId!');
+        console.error('❌ O app deve ser instalado diretamente na SUBCONTA (location), não na empresa principal');
+        console.error('❌ Para corrigir:');
+        console.error('   1. Desinstale o app da empresa');
+        console.error('   2. Instale o app diretamente na subconta desejada');
+        console.error('   3. Isso garantirá que o webhook funcione corretamente');
+        throw new Error('App deve ser instalado em subconta (location), não em empresa principal');
       }
+      
+      // Se chegou aqui, temos um locationId válido
+      const resourceId = tokenData.locationId;
+      const userType = 'Location';
+      
+      console.log('📍 Instalação de Subconta (Location) detectada ✅');
+      console.log('📍 LocationId:', tokenData.locationId);
+      console.log('📍 ResourceId:', resourceId);
       
       // Prepara dados para salvar
       const installationData = {
         ...tokenData,
-        locationId: finalLocationId,
+        locationId: tokenData.locationId,
         companyId: tokenData.companyId || null,
         userType: userType,
         integrationStatus: 'active',
@@ -296,12 +237,9 @@ export class GHL {
       
       await this.model.saveInstallationInfo(installationData);
       
-      console.log('✅ Instalação salva com sucesso para o recurso:', resourceId);
-      if (finalLocationId) {
-        console.log('📍 LocationId armazenado:', finalLocationId);
-      } else {
-        console.log('⚠️ LocationId não foi possível determinar - será necessário configurar manualmente');
-      }
+      console.log('✅ Instalação salva com sucesso para a subconta:', resourceId);
+      console.log('📍 LocationId armazenado:', tokenData.locationId);
+      console.log('🚀 Webhook configurado e pronto para receber mensagens!');
       
     } catch (error: any) {
       console.error('❌ Erro ao gerar tokens:', error?.response?.data || error);
