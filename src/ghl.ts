@@ -203,15 +203,46 @@ export class GHL {
       // Determina o resourceId baseado na resposta
       let resourceId: string;
       let userType: string;
+      let finalLocationId: string | null = null;
       
       if (tokenData.locationId) {
         resourceId = tokenData.locationId;
         userType = 'Location';
+        finalLocationId = tokenData.locationId;
         console.log('📍 Instalação de Localização detectada');
       } else if (tokenData.companyId) {
         resourceId = tokenData.companyId;
         userType = 'Company';
         console.log('🏢 Instalação de Empresa detectada');
+        
+        // Para instalações de empresa, busca as localizações disponíveis
+        try {
+          console.log('🔍 Buscando localizações da empresa...');
+          const locationsResp = await axios.get(
+            `${process.env.GHL_API_DOMAIN}/companies/${tokenData.companyId}/locations`,
+            {
+              headers: {
+                'Authorization': `Bearer ${tokenData.access_token}`,
+                'Version': '2021-07-28'
+              }
+            }
+          );
+          
+          console.log('📡 Localizações encontradas:', locationsResp.data);
+          
+          if (locationsResp.data.locations && locationsResp.data.locations.length > 0) {
+            // Pega a primeira localização (ou pode implementar lógica para escolher a correta)
+            const primaryLocation = locationsResp.data.locations[0];
+            finalLocationId = primaryLocation.id;
+            console.log('📍 Localização primária identificada:', finalLocationId);
+            console.log('📍 Nome da localização:', primaryLocation.name);
+          } else {
+            console.log('⚠️ Nenhuma localização encontrada para a empresa');
+          }
+        } catch (locationError: any) {
+          console.error('❌ Erro ao buscar localizações:', locationError?.response?.data || locationError);
+          console.log('⚠️ Continuando sem locationId específico');
+        }
       } else {
         console.error('❌ Nenhum locationId ou companyId encontrado na resposta');
         throw new Error('Resposta da API não contém locationId ou companyId');
@@ -220,7 +251,7 @@ export class GHL {
       // Prepara dados para salvar
       const installationData = {
         ...tokenData,
-        locationId: tokenData.locationId || null,
+        locationId: finalLocationId,
         companyId: tokenData.companyId || null,
         userType: userType,
         integrationStatus: 'active',
@@ -235,6 +266,9 @@ export class GHL {
       await this.model.saveInstallationInfo(installationData);
       
       console.log('✅ Instalação salva com sucesso para o recurso:', resourceId);
+      if (finalLocationId) {
+        console.log('📍 LocationId armazenado:', finalLocationId);
+      }
       
     } catch (error: any) {
       console.error('❌ Erro ao gerar tokens:', error?.response?.data || error);
