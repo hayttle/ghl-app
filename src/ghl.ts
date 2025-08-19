@@ -215,12 +215,15 @@ export class GHL {
         userType = 'Company';
         console.log('🏢 Instalação de Empresa detectada');
         
-        // Para instalações de empresa, busca as localizações disponíveis
+        // Para instalações de empresa, tenta buscar usuários para extrair locationId
         try {
-          console.log('🔍 Buscando localizações da empresa...');
-          const locationsResp = await axios.get(
-            `${process.env.GHL_API_DOMAIN}/companies/${tokenData.companyId}/locations`,
+          console.log('🔍 Buscando usuários da empresa para identificar localização...');
+          const usersResp = await axios.get(
+            `${process.env.GHL_API_DOMAIN}/users/search`,
             {
+              params: {
+                companyId: tokenData.companyId
+              },
               headers: {
                 'Authorization': `Bearer ${tokenData.access_token}`,
                 'Version': '2021-07-28'
@@ -228,20 +231,48 @@ export class GHL {
             }
           );
           
-          console.log('📡 Localizações encontradas:', locationsResp.data);
+          console.log('📡 Usuários encontrados:', usersResp.data);
           
-          if (locationsResp.data.locations && locationsResp.data.locations.length > 0) {
-            // Pega a primeira localização (ou pode implementar lógica para escolher a correta)
-            const primaryLocation = locationsResp.data.locations[0];
-            finalLocationId = primaryLocation.id;
-            console.log('📍 Localização primária identificada:', finalLocationId);
-            console.log('📍 Nome da localização:', primaryLocation.name);
+          if (usersResp.data.users && usersResp.data.users.length > 0) {
+            // Procura por um usuário que tenha locationId
+            const userWithLocation = usersResp.data.users.find((user: any) => user.locationId);
+            if (userWithLocation && userWithLocation.locationId) {
+              finalLocationId = userWithLocation.locationId;
+              console.log('📍 LocationId identificado através do usuário:', finalLocationId);
+              console.log('👤 Usuário:', userWithLocation.firstName, userWithLocation.lastName);
+            } else {
+              console.log('⚠️ Nenhum usuário com locationId encontrado');
+            }
           } else {
-            console.log('⚠️ Nenhuma localização encontrada para a empresa');
+            console.log('⚠️ Nenhum usuário encontrado para a empresa');
           }
-        } catch (locationError: any) {
-          console.error('❌ Erro ao buscar localizações:', locationError?.response?.data || locationError);
-          console.log('⚠️ Continuando sem locationId específico');
+        } catch (usersError: any) {
+          console.error('❌ Erro ao buscar usuários:', usersError?.response?.data || usersError);
+          console.log('⚠️ Tentando buscar informações da empresa...');
+          
+          // Tenta buscar informações da empresa diretamente
+          try {
+            const companyResp = await axios.get(
+              `${process.env.GHL_API_DOMAIN}/companies/${tokenData.companyId}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${tokenData.access_token}`,
+                  'Version': '2021-07-28'
+                }
+              }
+            );
+            
+            console.log('📡 Informações da empresa:', companyResp.data);
+            
+            // Se a empresa tiver um locationId padrão
+            if (companyResp.data.company && companyResp.data.company.locationId) {
+              finalLocationId = companyResp.data.company.locationId;
+              console.log('📍 LocationId da empresa:', finalLocationId);
+            }
+          } catch (companyError: any) {
+            console.error('❌ Erro ao buscar informações da empresa:', companyError?.response?.data || companyError);
+            console.log('⚠️ Continuando sem locationId específico');
+          }
         }
       } else {
         console.error('❌ Nenhum locationId ou companyId encontrado na resposta');
@@ -268,6 +299,8 @@ export class GHL {
       console.log('✅ Instalação salva com sucesso para o recurso:', resourceId);
       if (finalLocationId) {
         console.log('📍 LocationId armazenado:', finalLocationId);
+      } else {
+        console.log('⚠️ LocationId não foi possível determinar - será necessário configurar manualmente');
       }
       
     } catch (error: any) {
