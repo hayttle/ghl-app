@@ -288,42 +288,98 @@ app.get("/example-api-call-location", async (req: Request, res: Response) => {
 // Webhook handler refatorado
 app.post("/webhook/ghl", async (req: Request, res: Response) => {
   try {
-    console.log("Webhook da GoHighLevel recebido:", req.body);
+    console.log("=== WEBHOOK GHL RECEBIDO ===");
+    console.log("Body completo:", JSON.stringify(req.body, null, 2));
     
     const eventType = req.body.type;
-    const { contactId, locationId, message, conversationProviderId } = req.body;
+    const { contactId, locationId, message, conversationProviderId, companyId } = req.body;
+
+    console.log(`📡 Tipo de evento: ${eventType}`);
+    console.log(`📍 LocationId: ${locationId}`);
+    console.log(`🏢 CompanyId: ${companyId}`);
 
     switch (eventType) {
       case 'UNINSTALL':
+        console.log("🗑️ Evento UNINSTALL detectado - removendo instalação...");
+        
         if (locationId) {
-          await ghl.deleteInstallationInfo(locationId);
-          console.log(`Instalação removida para locationId: ${locationId}`);
+          try {
+            // Verifica se a instalação existe antes de deletar
+            const exists = await ghl.checkInstallationExists(locationId);
+            if (exists) {
+              await ghl.deleteInstallationInfo(locationId);
+              console.log(`✅ Instalação removida com sucesso para locationId: ${locationId}`);
+            } else {
+              console.log(`⚠️ Instalação não encontrada para locationId: ${locationId}`);
+            }
+          } catch (error: any) {
+            console.error(`❌ Erro ao remover instalação para locationId ${locationId}:`, error);
+          }
+        } else if (companyId) {
+          console.log(`⚠️ UNINSTALL sem locationId, mas com companyId: ${companyId}`);
+          console.log("⚠️ Tentando remover por companyId...");
+          try {
+            const exists = await ghl.checkInstallationExists(companyId);
+            if (exists) {
+              await ghl.deleteInstallationInfo(companyId);
+              console.log(`✅ Instalação removida com sucesso para companyId: ${companyId}`);
+            } else {
+              console.log(`⚠️ Instalação não encontrada para companyId: ${companyId}`);
+            }
+          } catch (error: any) {
+            console.error(`❌ Erro ao remover instalação para companyId ${companyId}:`, error);
+          }
+        } else {
+          console.log("❌ UNINSTALL sem locationId nem companyId - não é possível identificar qual instalação remover");
         }
-        res.status(200).json({ success: true, message: "Desinstalação processada" });
+        
+        res.status(200).json({ 
+          success: true, 
+          message: "Desinstalação processada",
+          data: { locationId, companyId, eventType }
+        });
         break;
 
       case 'INSTALL':
+        console.log("📦 Evento INSTALL detectado - configurando integração...");
+        
         if (locationId) {
-          console.log(`Evento INSTALL recebido para locationId: ${locationId}`);
-          // Configura integração automaticamente
-          await integrationService.setupIntegration(locationId);
+          console.log(`✅ Configurando integração para locationId: ${locationId}`);
+          try {
+            await integrationService.setupIntegration(locationId);
+            console.log(`✅ Integração configurada com sucesso para locationId: ${locationId}`);
+          } catch (error: any) {
+            console.error(`❌ Erro ao configurar integração para locationId ${locationId}:`, error);
+          }
+        } else {
+          console.log("⚠️ INSTALL sem locationId - não é possível configurar integração");
         }
-        res.status(200).json({ success: true, message: "Evento de instalação processado" });
+        
+        res.status(200).json({ 
+          success: true, 
+          message: "Evento de instalação processado",
+          data: { locationId, companyId, eventType }
+        });
         break;
 
       case "OutboundMessage":
+        console.log("📤 Evento OutboundMessage detectado - processando mensagem...");
+        
         if (conversationProviderId && locationId && contactId && message) {
           try {
             // Verifica se a mensagem não veio do próprio sistema (WhatsApp)
             const messageDirection = req.body.direction;
             if (messageDirection === 'inbound') {
-              console.log("Mensagem ignorada - direction 'inbound' indica mensagem recebida, evitando loop");
+              console.log("🔄 Mensagem ignorada - direction 'inbound' indica mensagem recebida, evitando loop");
               res.status(200).json({
                 success: true,
                 message: "Mensagem recebida ignorada para evitar loop"
               });
               break;
             }
+
+            console.log(`📝 Processando mensagem outbound para contactId: ${contactId}`);
+            console.log(`💬 Mensagem: ${message}`);
 
             // Atualiza conversationProviderId na instalação
             const installationDetails = await ghl.model.getInstallationInfo(locationId);
@@ -332,6 +388,7 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
                 ...installationDetails,
                 conversationProviderId: conversationProviderId
               });
+              console.log(`✅ ConversationProviderId atualizado: ${conversationProviderId}`);
             }
 
             // Envia mensagem via Evolution API
@@ -342,13 +399,13 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
             );
 
             if (result.success) {
-              console.log("Mensagem enviada com sucesso via Evolution API");
+              console.log("✅ Mensagem enviada com sucesso via Evolution API");
               res.status(200).json({
                 success: true,
                 message: "Webhook processado e mensagem enviada"
               });
             } else {
-              console.error("Falha ao enviar mensagem:", result.error);
+              console.error("❌ Falha ao enviar mensagem:", result.error);
               res.status(500).json({
                 success: false,
                 message: "Webhook processado, mas falha ao enviar mensagem",
@@ -356,7 +413,7 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
               });
             }
           } catch (error: any) {
-            console.error("Erro ao processar mensagem outbound:", error);
+            console.error("❌ Erro ao processar mensagem outbound:", error);
             res.status(500).json({
               success: false,
               message: "Erro ao processar webhook",
@@ -364,7 +421,12 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
             });
           }
         } else {
-          console.log("Dados incompletos para mensagem outbound");
+          console.log("⚠️ Dados incompletos para mensagem outbound:");
+          console.log(`  - conversationProviderId: ${conversationProviderId}`);
+          console.log(`  - locationId: ${locationId}`);
+          console.log(`  - contactId: ${contactId}`);
+          console.log(`  - message: ${message}`);
+          
           res.status(200).json({
             success: true,
             message: "Webhook processado, mas dados incompletos"
@@ -373,17 +435,20 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
         break;
 
       default:
+        console.log(`❓ Tipo de evento não suportado: ${eventType}`);
         res.status(200).json({
           success: true,
           message: "Tipo de evento não suportado"
         });
-        break;
     }
+    
+    console.log("=== WEBHOOK GHL PROCESSADO ===");
+    
   } catch (error: any) {
-    console.error("Erro ao processar webhook GHL:", error);
+    console.error("❌ Erro geral no webhook GHL:", error);
     res.status(500).json({
       success: false,
-      message: "Erro interno ao processar webhook",
+      message: "Erro interno no processamento do webhook",
       error: error.message
     });
   }
@@ -607,6 +672,101 @@ app.post("/debug/update-integration-status", async (req: Request, res: Response)
     res.status(500).json({
       success: false,
       message: 'Erro ao atualizar status',
+      error: error.message
+    });
+  }
+});
+
+// Rota para desinstalação manual do app
+app.delete("/integration/uninstall/:resourceId", async (req: Request, res: Response) => {
+  try {
+    const { resourceId } = req.params;
+    
+    if (!resourceId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Resource ID é obrigatório'
+      });
+    }
+
+    console.log(`🗑️ Desinstalação manual solicitada para: ${resourceId}`);
+
+    // Verifica se a instalação existe
+    const exists = await ghl.checkInstallationExists(resourceId);
+    if (!exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Instalação não encontrada',
+        data: { resourceId }
+      });
+    }
+
+    // Busca informações da instalação antes de deletar
+    const installationDetails = await ghl.model.getInstallationInfo(resourceId);
+    
+    // Remove a instalação
+    await ghl.deleteInstallationInfo(resourceId);
+    
+    console.log(`✅ Instalação removida com sucesso: ${resourceId}`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'App desinstalado com sucesso',
+      data: {
+        resourceId,
+        removedAt: new Date().toISOString(),
+        installationDetails: installationDetails ? {
+          locationId: installationDetails.locationId,
+          companyId: installationDetails.companyId,
+          userType: installationDetails.userType,
+          evolutionInstanceName: installationDetails.evolutionInstanceName
+        } : null
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ Erro na desinstalação manual:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno na desinstalação',
+      error: error.message
+    });
+  }
+});
+
+// Rota para listar todas as instalações (útil para debug)
+app.get("/integration/installations", async (req: Request, res: Response) => {
+  try {
+    console.log('📋 Listando todas as instalações...');
+    
+    const installations = await ghl.model.getAllInstallations();
+    
+    console.log(`✅ ${installations.length} instalações encontradas`);
+    
+    res.status(200).json({
+      success: true,
+      message: `${installations.length} instalações encontradas`,
+      data: {
+        count: installations.length,
+        installations: installations.map(inst => ({
+          id: inst.id,
+          locationId: inst.locationId,
+          companyId: inst.companyId,
+          userType: inst.userType,
+          integrationStatus: inst.integrationStatus,
+          evolutionInstanceName: inst.evolutionInstanceName,
+          lastSyncAt: inst.lastSyncAt,
+          createdAt: inst.createdAt,
+          updatedAt: inst.updatedAt
+        }))
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ Erro ao listar instalações:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno ao listar instalações',
       error: error.message
     });
   }

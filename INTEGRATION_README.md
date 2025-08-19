@@ -204,6 +204,57 @@ Verifica o status de todas as integrações ativas.
 }
 ```
 
+#### `DELETE /integration/uninstall/:resourceId`
+Remove manualmente uma instalação do app.
+
+**Parâmetros:**
+- `resourceId`: ID da localização ou empresa
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "message": "App desinstalado com sucesso",
+  "data": {
+    "resourceId": "73NtQAAH2EvgoqRsx6qJ",
+    "removedAt": "2025-08-19T17:54:34.442Z",
+    "installationDetails": {
+      "locationId": "73NtQAAH2EvgoqRsx6qJ",
+      "companyId": null,
+      "userType": "Location",
+      "evolutionInstanceName": "backend_server"
+    }
+  }
+}
+```
+
+#### `GET /integration/installations`
+Lista todas as instalações ativas no sistema.
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "message": "2 instalações encontradas",
+  "data": {
+    "count": 2,
+    "installations": [
+      {
+        "id": 1,
+        "locationId": "73NtQAAH2EvgoqRsx6qJ",
+        "companyId": null,
+        "userType": "Location",
+        "integrationStatus": "active",
+        "evolutionInstanceName": "backend_server",
+        "lastSyncAt": "2025-08-19T17:49:03.202Z",
+        "createdAt": "2025-08-19T17:49:03.202Z",
+        "updatedAt": "2025-08-19T17:49:03.202Z"
+      }
+    ]
+  }
+}
+```
+
 ### Webhooks
 
 #### `POST /webhook/ghl`
