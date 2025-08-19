@@ -107,23 +107,52 @@ export class GHL {
     companyId: string,
     locationId: string
   ) {
-    const res = await this.requests(companyId).post(
-      "/oauth/locationToken",
-      {
-        companyId,
-        locationId,
-      },
-      {
-        headers: {
-          Version: "2021-07-28",
+    try {
+      console.log('🔄 Obtendo token de localização para:', { companyId, locationId });
+      
+      const res = await this.requests(companyId).post(
+        "/oauth/locationToken",
+        {
+          companyId,
+          locationId,
         },
-      }
-    );
-    this.model.saveInstallationInfo(res.data);
+        {
+          headers: {
+            Version: "2021-07-28",
+          },
+        }
+      );
+      
+      console.log('📡 Token de localização obtido com sucesso');
+      
+      const installationData = {
+        ...res.data,
+        locationId: locationId,
+        companyId: companyId,
+        userType: 'Location',
+        integrationStatus: 'active',
+        evolutionInstanceName: process.env.EVOLUTION_INSTANCE_NAME || 'default',
+        lastSyncAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      console.log('💾 Salvando dados de instalação:', installationData);
+      
+      await this.model.saveInstallationInfo(installationData);
+      
+      console.log('✅ Instalação de localização salva com sucesso');
+      
+    } catch (error: any) {
+      console.error('❌ Erro ao obter token de localização:', error?.response?.data || error);
+      throw error;
+    }
   }
 
   private async refreshAccessToken(resourceId: string) {
     try {
+      console.log('🔄 Renovando token de acesso para:', resourceId);
+      
       const resp = await axios.post(
         `${process.env.GHL_API_DOMAIN}/oauth/token`,
         qs.stringify({
@@ -134,17 +163,27 @@ export class GHL {
         }),
         { headers: { "content-type": "application/x-www-form-urlencoded" } }
       );
+      
+      console.log('📡 Token renovado com sucesso');
+      
       await this.model.saveInstallationInfo({
         ...resp.data,
         locationId: resourceId,
+        updatedAt: new Date().toISOString()
       });
+      
+      console.log('✅ Token renovado salvo no banco');
+      
     } catch (error: any) {
-      console.error(error?.response?.data);
+      console.error('❌ Erro ao renovar token:', error?.response?.data || error);
+      throw error;
     }
   }
 
   private async generateAccessTokenRefreshTokenPair(code: string) {
     try {
+      console.log('🔄 Gerando par de tokens de acesso...');
+      
       const resp = await axios.post(
         `${process.env.GHL_API_DOMAIN}/oauth/token`,
         qs.stringify({
@@ -155,13 +194,51 @@ export class GHL {
         }),
         { headers: { "content-type": "application/x-www-form-urlencoded" } }
       );
-      await this.model.saveInstallationInfo({
-        ...resp.data,
-        locationId: resp.data.locationId,
-        companyId: resp.data.companyId
-      });
+      
+      console.log('📡 Resposta da API GHL:', resp.data);
+      
+      // Extrai os dados da resposta
+      const tokenData = resp.data;
+      
+      // Determina o resourceId baseado na resposta
+      let resourceId: string;
+      let userType: string;
+      
+      if (tokenData.locationId) {
+        resourceId = tokenData.locationId;
+        userType = 'Location';
+        console.log('📍 Instalação de Localização detectada');
+      } else if (tokenData.companyId) {
+        resourceId = tokenData.companyId;
+        userType = 'Company';
+        console.log('🏢 Instalação de Empresa detectada');
+      } else {
+        console.error('❌ Nenhum locationId ou companyId encontrado na resposta');
+        throw new Error('Resposta da API não contém locationId ou companyId');
+      }
+      
+      // Prepara dados para salvar
+      const installationData = {
+        ...tokenData,
+        locationId: tokenData.locationId || null,
+        companyId: tokenData.companyId || null,
+        userType: userType,
+        integrationStatus: 'active',
+        evolutionInstanceName: process.env.EVOLUTION_INSTANCE_NAME || 'default',
+        lastSyncAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      console.log('💾 Salvando dados de instalação:', installationData);
+      
+      await this.model.saveInstallationInfo(installationData);
+      
+      console.log('✅ Instalação salva com sucesso para o recurso:', resourceId);
+      
     } catch (error: any) {
-      console.error(error?.response?.data);
+      console.error('❌ Erro ao gerar tokens:', error?.response?.data || error);
+      throw error;
     }
   }
 }
