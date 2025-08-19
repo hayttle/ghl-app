@@ -2,10 +2,8 @@ import qs from "qs";
 import axios, { AxiosRequestConfig, InternalAxiosRequestConfig } from "axios";
 import { createDecipheriv, createHash } from 'node:crypto';
 
-import { Model, TokenType } from "./model";
+import { Model, TokenType, AppUserType, InstallationDetails } from "./model";
 
-/* The GHL class is responsible for handling authorization, making API requests, and managing access
-tokens and refresh tokens for a specific resource. */
 export class GHL {
   public model: Model;
 
@@ -13,13 +11,6 @@ export class GHL {
     this.model = new Model();
   }
 
-/**
- * The `authorizationHandler` function handles the authorization process by generating an access token
- * and refresh token pair.
- * @param {string} code - The code parameter is a string that represents the authorization code
- * obtained from the authorization server. It is used to exchange for an access token and refresh token
- * pair.
- */
   async authorizationHandler(code: string) {
     if (!code) {
       console.warn(
@@ -68,76 +59,50 @@ export class GHL {
     }
   }
 
-/**
- * The function creates an instance of Axios with a base URL and interceptors for handling
- * authorization and refreshing access tokens.
- * @param {string} resourceId - The `resourceId` parameter is a string that represents the locationId or companyId you want
- * to make api call for.
- * @returns an instance of the Axios library with some custom request and response interceptors.
- */
   requests(resourceId: string) {
     const baseUrl = process.env.GHL_API_DOMAIN;
-
-    if (!this.model.getAccessToken(resourceId)) {
-      throw new Error("Installation not found for the following resource");
-    }
+    const model = this.model;
 
     const axiosInstance = axios.create({
-      baseURL: baseUrl,
+        baseURL: baseUrl,
     });
 
     axiosInstance.interceptors.request.use(
-      async (requestConfig: InternalAxiosRequestConfig) => {
-        try {
-          requestConfig.headers["Authorization"] = `${
-            TokenType.Bearer
-          } ${this.model.getAccessToken(resourceId)}`;
-        } catch (e) {
-          console.error(e);
+        async (requestConfig: InternalAxiosRequestConfig) => {
+            try {
+                requestConfig.headers["Authorization"] = `${TokenType.Bearer} ${await model.getAccessToken(resourceId)}`;
+                requestConfig.headers["locationId"] = resourceId;
+            } catch (e) {
+                console.error(e);
+            }
+            return requestConfig;
         }
-        return requestConfig;
-      }
     );
 
-    axios.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        const originalRequest = error.config;
-
-        if (error.response.status === 401 && !originalRequest._retry) {
-          originalRequest._retry = true;
-          return this.refreshAccessToken(resourceId).then(() => {
-            originalRequest.headers.Authorization = `Bearer ${this.model.getAccessToken(
-              resourceId
-            )}`;
-            return axios(originalRequest);
-          });
+    axiosInstance.interceptors.response.use(
+        (response) => response,
+        async (error) => {
+            const originalRequest = error.config;
+            if (error.response.status === 401 && !originalRequest._retry) {
+                originalRequest._retry = true;
+                await this.refreshAccessToken(resourceId);
+                originalRequest.headers.Authorization = `Bearer ${await model.getAccessToken(resourceId)}`;
+                return axios(originalRequest);
+            }
+            return Promise.reject(error);
         }
-
-        return Promise.reject(error);
-      }
     );
-
     return axiosInstance;
   }
 
-/**
- * The function checks if an installation exists for a given resource ID i.e locationId or companyId.
- * @param {string} resourceId - The `resourceId` parameter is a string that represents the ID of a
- * resource.
- * @returns a boolean value.
- */
-  checkInstallationExists(resourceId: string){
-    return !!this.model.getAccessToken(resourceId)
+  async checkInstallationExists(resourceId: string): Promise<boolean>{
+    return await this.model.checkInstallationExists(resourceId)
   }
 
-/**
- * The function `getLocationTokenFromCompanyToken` retrieves a location token from a company token and
- * saves the installation information.
- * @param {string} companyId - A string representing the ID of the company.
- * @param {string} locationId - The `locationId` parameter is a string that represents the unique
- * identifier of a location within a company.
- */
+  async deleteInstallationInfo(locationId: string) {
+    await this.model.deleteInstallationInfo(locationId);
+  }
+
   async getLocationTokenFromCompanyToken(
     companyId: string,
     locationId: string
@@ -165,12 +130,14 @@ export class GHL {
           client_id: process.env.GHL_APP_CLIENT_ID,
           client_secret: process.env.GHL_APP_CLIENT_SECRET,
           grant_type: "refresh_token",
-          refresh_token: this.model.getRefreshToken(resourceId),
+          refresh_token: await this.model.getRefreshToken(resourceId),
         }),
         { headers: { "content-type": "application/x-www-form-urlencoded" } }
       );
-      this.model.setAccessToken(resourceId, resp.data.access_token);
-      this.model.setRefreshToken(resourceId, resp.data.refresh_token);
+      await this.model.saveInstallationInfo({
+        ...resp.data,
+        locationId: resourceId,
+      });
     } catch (error: any) {
       console.error(error?.response?.data);
     }
@@ -188,7 +155,11 @@ export class GHL {
         }),
         { headers: { "content-type": "application/x-www-form-urlencoded" } }
       );
-      this.model.saveInstallationInfo(resp.data);
+      await this.model.saveInstallationInfo({
+        ...resp.data,
+        locationId: resp.data.locationId,
+        companyId: resp.data.companyId
+      });
     } catch (error: any) {
       console.error(error?.response?.data);
     }
