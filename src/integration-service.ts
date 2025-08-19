@@ -426,15 +426,21 @@ export class IntegrationService {
       } else {
         // Se não encontrou, cria um novo contato
         console.log('📝 Criando novo contato para:', phoneNumber);
-        const createResponse = await this.ghl.requests(resourceId).post('/contacts/', {
+        
+        // Prepara payload para criação do contato (apenas campos obrigatórios)
+        const contactPayload = {
           locationId: resourceId,
           phone: phoneNumber,
-          email: '',
-          firstName: pushName || 'WhatsApp',
-          lastName: 'User'
-        }, {
+          firstName: pushName || 'WhatsApp'
+        };
+        
+        console.log('📝 Payload para criação do contato:', contactPayload);
+        
+        const createResponse = await this.ghl.requests(resourceId).post('/contacts/', contactPayload, {
           headers: { Version: "2021-07-28" }
         });
+        
+        console.log('📝 Resposta da criação do contato:', createResponse.data);
         contact = createResponse.data.contact;
         console.log('✅ Novo contato criado:', contact.id);
       }
@@ -480,6 +486,17 @@ export class IntegrationService {
 
     } catch (error: unknown) {
       console.error('Erro ao buscar/criar contato e conversa no GHL:', error);
+      
+      // Log detalhado do erro
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as any;
+        console.error('🔴 Detalhes do erro GHL:');
+        console.error('Status:', axiosError.response?.status);
+        console.error('Status Text:', axiosError.response?.statusText);
+        console.error('Data:', axiosError.response?.data);
+        console.error('Headers:', axiosError.response?.headers);
+      }
+      
       return {
         success: false,
         message: 'Erro ao buscar/criar contato e conversa no GHL',
