@@ -834,8 +834,14 @@ app.post("/webhook/evolution",
            return res.status(500).json({ error: 'LocationId não encontrado na instalação' });
          }
          
-         const result = await integrationService.sendMessageToWhatsApp(
-           installationDetails.locationId,
+         // Para resposta automática, usar Evolution API diretamente
+         const evolutionService = new EvolutionApiService({
+           baseUrl: baseIntegrationConfig.evolutionApiUrl,
+           apiKey: baseIntegrationConfig.evolutionApiKey,
+           instanceName: installationDetails.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+         });
+         
+         const result = await evolutionService.sendTextMessage(
            inboundPhoneNumber,
            responseMessage
          );
