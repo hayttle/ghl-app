@@ -37,6 +37,7 @@ export class EvolutionApiService {
     // Interceptor para logs
     this.axiosInstance.interceptors.request.use(
       (config) => {
+        // Logs de requisição simplificados
         console.log(`[Evolution API] ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },
@@ -48,6 +49,7 @@ export class EvolutionApiService {
 
     this.axiosInstance.interceptors.response.use(
       (response) => {
+        // Logs de resposta simplificados
         console.log(`[Evolution API] Resposta: ${response.status}`);
         return response;
       },
@@ -133,7 +135,8 @@ export class EvolutionApiService {
         `/instance/connectionState/${this.config.instanceName}`
       );
       
-      console.log('Status da instância recebido:', response.data);
+      // Logs de status simplificados
+      console.log('Status da instância:', response.data.state);
       
       // Aceita diferentes status que indicam que a instância está funcionando
       const validStates = ['open', 'connecting', 'connected'];

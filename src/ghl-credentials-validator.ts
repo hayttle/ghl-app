@@ -63,6 +63,7 @@ export class GHLCredentialsValidator {
       (req as any).ghlInstallation = installation;
       (req as any).locationId = locationId;
       
+      // Logs de validação simplificados
       console.log(`✅ Credenciais GHL validadas para locationId: ${locationId}`);
       next();
 
@@ -157,8 +158,14 @@ export class GHLCredentialsValidator {
         });
       }
 
+      // Logs de webhook simplificados
       console.log(`🔍 Validando webhook GHL para locationId: ${locationId}`);
-      console.log(`🔍 Body completo do webhook:`, JSON.stringify(req.body, null, 2));
+      console.log(`📋 Payload do webhook:`, {
+        type: req.body.type,
+        locationId: req.body.locationId,
+        companyId: req.body.companyId,
+        messageId: req.body.messageId
+      });
 
       // Busca as credenciais armazenadas para esta instalação
       const installationDetails = await this.model.getInstallationInfo(locationId);

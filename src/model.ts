@@ -65,12 +65,8 @@ export class Model {
       throw new Error("Location ID ou Company ID é obrigatório para salvar informações de instalação.");
     }
     
-    console.log("Tentando salvar dados de instalação no DB:", {
-      locationId: details.locationId,
-      companyId: details.companyId,
-      conversationProviderId: details.conversationProviderId,
-      evolutionInstanceName: details.evolutionInstanceName
-    });
+    const resourceId = details.locationId || details.companyId;
+    console.log("💾 Salvando dados de instalação no DB para:", resourceId);
 
     const query = `
       INSERT INTO installations (
@@ -127,8 +123,7 @@ export class Model {
 
     try {
       await pool.query(query, values);
-      const resourceId = details.locationId || details.companyId;
-      console.log(`Dados da instalação salvos no DB para o recurso: ${resourceId}`);
+      console.log(`✅ Dados da instalação salvos no DB para o recurso: ${resourceId}`);
     } catch (error) {
       console.error('Erro ao salvar no banco de dados:', error);
       throw error;
@@ -212,7 +207,7 @@ export class Model {
         'DELETE FROM installations WHERE location_id = $1 OR company_id = $1', 
         [resourceId]
       );
-      console.log(`Instalação deletada do DB para o recurso: ${resourceId}`);
+      console.log(`🗑️ Instalação deletada do DB para o recurso: ${resourceId}`);
     } catch (error) {
       console.error('Erro ao deletar instalação no banco de dados:', error);
       throw error;
@@ -238,7 +233,7 @@ export class Model {
         'UPDATE installations SET integration_status = $1, updated_at = NOW() WHERE location_id = $2 OR company_id = $2',
         [status, resourceId]
       );
-      console.log(`Status de integração atualizado para ${status} no recurso: ${resourceId}`);
+      console.log(`✅ Status de integração atualizado para ${status} no recurso: ${resourceId}`);
     } catch (error) {
       console.error('Erro ao atualizar status de integração:', error);
       throw error;

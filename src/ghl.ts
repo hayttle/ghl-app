@@ -28,7 +28,8 @@ export class GHL {
       throw new Error('instanceName é obrigatório para configuração da instância Evolution');
     }
     
-    console.log(`🔐 Authorization handler chamado com instanceName: ${instanceName}`);
+    // Logs de autorização simplificados
+    console.log(`🔐 Iniciando autorização com instanceName: ${instanceName}`);
     await this.generateAccessTokenRefreshTokenPair(code, instanceName);
   }
 
@@ -150,7 +151,11 @@ export class GHL {
         updatedAt: new Date().toISOString()
       };
       
-      console.log('💾 Salvando dados de instalação:', installationData);
+      console.log('💾 Salvando dados de instalação:', {
+        locationId: installationData.locationId,
+        companyId: installationData.companyId,
+        evolutionInstanceName: installationData.evolutionInstanceName
+      });
       
       await this.model.saveInstallationInfo(installationData);
       
@@ -208,7 +213,12 @@ export class GHL {
         { headers: { "content-type": "application/x-www-form-urlencoded" } }
       );
       
-      console.log('📡 Resposta da API GHL:', resp.data);
+      console.log('📡 Resposta da API GHL:', {
+        access_token: resp.data.access_token ? '***CONFIGURADO***' : 'NÃO CONFIGURADO',
+        refresh_token: resp.data.refresh_token ? '***CONFIGURADO***' : 'NÃO CONFIGURADO',
+        locationId: resp.data.locationId,
+        companyId: resp.data.companyId
+      });
       
       // Extrai os dados da resposta
       const tokenData = resp.data;
@@ -248,7 +258,11 @@ export class GHL {
         updatedAt: new Date().toISOString()
       };
       
-      console.log('💾 Salvando dados de instalação:', installationData);
+      console.log('💾 Salvando dados de instalação:', {
+        locationId: installationData.locationId,
+        companyId: installationData.companyId,
+        evolutionInstanceName: installationData.evolutionInstanceName
+      });
       
       await this.model.saveInstallationInfo(installationData);
       

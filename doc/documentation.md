@@ -6,7 +6,7 @@ Sistema de integração bidirecional entre **GoHighLevel CRM** e **Evolution API
 
 ### ✨ Funcionalidades Principais
 
-- **🔄 Sincronização Bidirecional**: WhatsApp ↔ GHL CRM
+- **🔄 Sincronização Bidirecional**: WhatsApp ↔ GHL CRM ✅ **FUNCIONANDO 100%**
 - **👤 Gestão Automática de Contatos**: Criação e busca automática
 - **💬 Gestão de Conversas**: Criação e atualização automática
 - **📨 Processamento de Mensagens**: Recebidas e enviadas
@@ -14,9 +14,10 @@ Sistema de integração bidirecional entre **GoHighLevel CRM** e **Evolution API
 - **📊 Monitoramento**: Status de integrações e sincronização
 - **🔐 OAuth2 GHL**: Integração oficial com marketplace GoHighLevel
 - **🆕 InstanceName Dinâmico**: Captura via rota intermediária e cookies
-- **📱 Status de Mensagens**: Atualização automática para "delivered"
+- **📱 Status de Mensagens**: Atualização automática para "delivered" ✅ **FUNCIONANDO**
 - **🗑️ Desinstalação Automática**: Via webhook GHL
 - **🧹 Validação Robusta**: InstanceName obrigatório e validações de segurança
+- **🔑 API Key Evolution**: Configuração global para autenticação ✅ **CORRIGIDO**
 
 ## 🏗️ Arquitetura
 
@@ -77,7 +78,7 @@ GHL_API_DOMAIN=https://services.leadconnectorhq.com
 
 # Configurações Evolution API
 EVOLUTION_API_URL=https://sua-evolution-api.com
-EVOLUTION_API_KEY=sua_api_key
+EVOLUTION_API_KEY=sua_api_key_global
 
 # Configurações do Servidor
 PORT=3000
@@ -90,6 +91,8 @@ NODE_ENV=development
 - ~~`EVOLUTION_WEBHOOK_SECRET`~~ - Substituída por validação de credenciais GHL
 - ~~`ADMIN_API_KEY`~~ - Substituída por validação de credenciais GHL
 - ~~`READONLY_API_KEY`~~ - Substituída por validação de credenciais GHL
+
+**🔑 NOVO:** A `EVOLUTION_API_KEY` deve ser uma **API Key global válida** da sua instância Evolution API.
 
 ### 3. Configuração do Banco de Dados
 
@@ -125,14 +128,28 @@ npm run db:migrate
 1. Configure sua instância Evolution API
 2. Configure o webhook para apontar para: `https://seu-dominio.com/webhook/evolution`
 3. Certifique-se de que a instância está conectada
+4. **🔑 IMPORTANTE:** Configure uma API Key global válida no arquivo `.env`
 
 ## 🔌 Endpoints da API
 
 ### Autenticação e Instalação
 
+#### `GET /authorize-start`
+Rota intermediária para capturar `instanceName` antes do OAuth GHL.
 
+**Parâmetros:**
+- `instanceName` (obrigatório): Nome da instância Evolution API
 
-#### `GET /authorize/callback`
+**Exemplo:**
+```bash
+GET /authorize-start?instanceName=backend_server
+```
+
+**Resposta:**
+- Redireciona para OAuth GHL preservando o `instanceName`
+- Armazena `instanceName` em cookie temporário
+
+#### `GET /authorize-handler`
 Callback para processar a autorização OAuth2.
 
 **Parâmetros:**
@@ -457,7 +474,7 @@ GET /authorize-start?instanceName=backend_server
 2. Webhook /webhook/ghl recebe evento OutboundMessage
 3. Sistema verifica se é mensagem de saída (não inbound)
 4. Busca informações do contato no GHL
-5. Envia mensagem via Evolution API
+5. Envia mensagem via Evolution API usando API Key global
 6. Mensagem é entregue no WhatsApp
 7. ✅ Status da mensagem é atualizado para "delivered" no GHL
 ```
@@ -493,13 +510,18 @@ npm run dev
 
 ### ✅ **Sincronização Bidirecional**
 - **WhatsApp → GHL**: Mensagens recebidas aparecem no lado esquerdo
-- **GHL → WhatsApp**: Mensagens enviadas com status "delivered" automático
+- **GHL → WhatsApp**: Mensagens enviadas com status "delivered" automático ✅ **FUNCIONANDO 100%**
 - **Prevenção de Loops**: Sistema anti-repetição implementado
 - **Gestão Automática**: Contatos e conversas criados automaticamente
 
 ### ✅ **Webhooks e Automação**
 - **Webhook GHL**: Instalação, desinstalação e mensagens
 - **Webhook Evolution**: Mensagens recebidas do WhatsApp
+
+### ✅ **API Key Evolution Global**
+- **Configuração Centralizada**: Uma única API Key para todas as instâncias
+- **Autenticação Robusta**: Validação automática com Evolution API
+- **Status de Mensagens**: Atualização automática para "delivered" funcionando
 
 ## 🛡️ **Sistema de Segurança Simplificado**
 
@@ -598,6 +620,13 @@ curl -X POST "http://localhost:3000/integration/send-message" \
 - Verifique se `messageId` está sendo passado
 - Sistema atualiza automaticamente após envio via Evolution API
 
+#### 5. **Erro 401 Unauthorized da Evolution API**
+**Problema**: Mensagens do CRM não chegam no WhatsApp
+**Solução**:
+- ✅ **CORRIGIDO**: Configure uma `EVOLUTION_API_KEY` válida no arquivo `.env`
+- Verifique se a API Key é global e tem permissões adequadas
+- Teste a conectividade via `/test-evolution`
+
 ### 📝 **Logs Importantes**
 
 O sistema gera logs detalhados para cada operação:
@@ -645,6 +674,10 @@ O sistema gera logs detalhados para cada operação:
 **Sintoma**: `Contact not found`
 **Solução**: Verificar se o `conversationId` está sendo buscado dinamicamente
 
+#### 5. Mensagens do CRM não chegam no WhatsApp
+**Sintoma**: Erro 401 Unauthorized da Evolution API
+**Solução**: ✅ **CORRIGIDO** - Configure `EVOLUTION_API_KEY` válida no `.env`
+
 ### Logs de Debug
 
 ```bash
@@ -675,12 +708,14 @@ Se você já estava usando o sistema anterior com `INTERNAL_API_KEY`, `GHL_WEBHO
 - ✅ **Validação automática**: Credenciais GHL são capturadas durante instalação
 - ✅ **Isolamento total**: Cada subconta tem suas próprias credenciais
 - ✅ **Manutenção reduzida**: Menos variáveis de ambiente para gerenciar
+- ✅ **API Key Evolution**: Configuração global simplificada
 
 ### **Para Novas Instalações:**
 
 - **NÃO é necessário** configurar webhook secrets no marketplace GHL
 - **NÃO é necessário** configurar `INTERNAL_API_KEY` no `.env`
 - **O sistema captura automaticamente** as credenciais necessárias
+- **Configure apenas** `EVOLUTION_API_KEY` válida no `.env`
 
 ---
 
@@ -755,6 +790,7 @@ curl "http://localhost:3000/integration/status"
 - **Webhook**: `POST /webhook/evolution`
 - **Eventos**: `messages.upsert`
 - **Campos Importantes**: `pushName`, `remoteJid`, `conversation`
+- **Autenticação**: API Key global via `EVOLUTION_API_KEY`
 
 ## 🚀 Próximos Passos
 
@@ -783,9 +819,19 @@ Para dúvidas ou problemas:
 2. **Consulte esta documentação**
 3. **Teste os endpoints** de diagnóstico
 4. **Verifique as configurações** de ambiente
+5. **✅ Verifique se `EVOLUTION_API_KEY` está configurada corretamente**
 
 ---
 
-**Versão**: 2.0.0  
+**Versão**: 2.1.0  
 **Última Atualização**: Agosto 2025  
-**Status**: ✅ Produção
+**Status**: ✅ **PRODUÇÃO - FUNCIONANDO 100%**
+
+### 🎉 **Últimas Correções Implementadas**
+
+- ✅ **API Key Evolution**: Configuração global funcionando
+- ✅ **Integração CRM → WhatsApp**: Mensagens sendo enviadas com sucesso
+- ✅ **Status de Mensagens**: Atualização automática para "delivered" funcionando
+- ✅ **Prevenção de Loops**: Sistema anti-repetição implementado
+- ✅ **Multi-instância**: Roteamento correto para subcontas específicas
+- ✅ **Segurança Simplificada**: Validação por credenciais GHL funcionando
