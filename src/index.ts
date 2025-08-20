@@ -102,11 +102,15 @@ const port = process.env.PORT || 3000;
 console.log('🚀 Servidor iniciando...');
 console.log('🔧 Modo desenvolvimento: proxy confiável limitado ativado para ngrok');
 
+// Construir DATABASE_URL a partir das variáveis individuais
+const databaseUrl = process.env.DATABASE_URL || 
+  `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
+
 // Logs de configuração simplificados
 console.log('=== CONFIGURAÇÕES CARREGADAS ===');
 console.log('Evolution API:', process.env.EVOLUTION_API_KEY ? '✅ CONFIGURADA' : '❌ NÃO CONFIGURADA');
 console.log('GoHighLevel:', process.env.GHL_APP_CLIENT_ID ? '✅ CONFIGURADO' : '❌ NÃO CONFIGURADO');
-console.log('Banco de Dados:', process.env.DATABASE_URL ? '✅ CONFIGURADO' : '❌ NÃO CONFIGURADO');
+console.log('Banco de Dados:', (process.env.DB_HOST && process.env.DB_USER && process.env.DB_PASSWORD && process.env.DB_NAME) ? '✅ CONFIGURADO' : '❌ NÃO CONFIGURADO');
 console.log('================================');
 
 // Middleware de logging seguro já aplicado acima
@@ -471,7 +475,7 @@ app.post("/webhook/ghl",
       console.log("LocationId:", locationId);
       console.log("MessageId:", messageId);
 
-      if (eventType === 'UNINSTALL') {
+  if (eventType === 'UNINSTALL') {
       console.log("🗑️ Evento UNINSTALL detectado - removendo instalação...");
       
               if (locationId) {
@@ -671,8 +675,8 @@ app.post("/webhook/ghl",
                console.log(`✅ Status da mensagem atualizado para "delivered":`, statusUpdateResponse.data);
              } catch (error: any) {
                console.error(`❌ Erro ao atualizar status da mensagem:`, error.message);
-             }
-          } else {
+          }
+      } else {
             console.log("❌ Nenhum messageId encontrado - não é possível atualizar status");
           }
           
@@ -696,7 +700,7 @@ app.post("/webhook/ghl",
           error: error.message
         });
       }
-    } else {
+  } else {
       console.log(`❓ Tipo de evento não suportado: ${eventType}`);
     }
     
@@ -919,7 +923,7 @@ app.post("/send-message-evolution",
     }
 
     // Busca o instanceName específico desta instalação
-    const installationDetails = await ghl.model.getInstallationInfo(locationId);
+              const installationDetails = await ghl.model.getInstallationInfo(locationId);
     if (!installationDetails) {
       return res.status(404).json({
         success: false,
@@ -948,7 +952,7 @@ app.post("/send-message-evolution",
     
     if (result.success) {
       res.json(result);
-  } else {
+          } else {
       res.status(400).json(result);
     }
   } catch (error: any) {
