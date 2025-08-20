@@ -721,7 +721,10 @@ app.post("/webhook/evolution",
   console.log("Payload Evolution recebido:", {
     event: req.body.event,
     instance: req.body.instance,
-    message: req.body.data?.message?.conversation,
+    hasData: !!req.body.data,
+    hasMessage: !!req.body.data?.message,
+    hasKey: !!req.body.data?.key,
+    messageTypes: req.body.data?.message ? Object.keys(req.body.data.message) : [],
     phone: req.body.data?.key?.remoteJid
   });
 
@@ -729,21 +732,50 @@ app.post("/webhook/evolution",
     console.log("Evento de mensagem recebida detectado. Processando...");
     
     const messageData = req.body.data;
-    const inboundMessageText = messageData.message.conversation;
+    
+    // Verificar se a estrutura da mensagem está correta
+    if (!messageData || !messageData.message || !messageData.key) {
+      console.error("❌ Estrutura da mensagem inválida:", messageData);
+      return res.status(400).json({
+        success: false,
+        message: "Estrutura da mensagem inválida"
+      });
+    }
+    
+    // Extrair texto da mensagem de forma segura
+    let inboundMessageText = '';
+    if (messageData.message.conversation) {
+      inboundMessageText = messageData.message.conversation;
+    } else if (messageData.message.extendedTextMessage) {
+      inboundMessageText = messageData.message.extendedTextMessage.text || '';
+    } else if (messageData.message.imageMessage) {
+      inboundMessageText = '[IMAGEM]';
+    } else if (messageData.message.audioMessage) {
+      inboundMessageText = '[ÁUDIO]';
+    } else if (messageData.message.videoMessage) {
+      inboundMessageText = '[VÍDEO]';
+    } else if (messageData.message.documentMessage) {
+      inboundMessageText = '[DOCUMENTO]';
+    } else {
+      inboundMessageText = '[MENSAGEM]';
+    }
+    
     const inboundPhoneNumber = `+${messageData.key.remoteJid.replace('@s.whatsapp.net', '')}`;
     const pushName = messageData.pushName || messageData.data?.pushName;
     
-    // Verificações anti-loop
-    if (inboundMessageText.includes('[SISTEMA]') || inboundMessageText.includes('[GHL]') || inboundMessageText.includes('[INTEGRATION]')) {
-      console.log(`🔄 Mensagem ignorada - contém marcadores do sistema: "${inboundMessageText}"`);
-      return res.status(200).json({ success: true, message: "Mensagem do sistema ignorada" });
-    }
-    
-    if (inboundMessageText.toLowerCase().includes('status: delivered') || 
-        inboundMessageText.toLowerCase().includes('message sent') || 
-        inboundMessageText.toLowerCase().includes('integration')) {
-      console.log(`🔄 Mensagem ignorada - parece ser resposta automática do sistema: "${inboundMessageText}"`);
-      return res.status(200).json({ success: true, message: "Resposta automática ignorada" });
+    // Verificações anti-loop (apenas se houver texto)
+    if (inboundMessageText && typeof inboundMessageText === 'string') {
+      if (inboundMessageText.includes('[SISTEMA]') || inboundMessageText.includes('[GHL]') || inboundMessageText.includes('[INTEGRATION]')) {
+        console.log(`🔄 Mensagem ignorada - contém marcadores do sistema: "${inboundMessageText}"`);
+        return res.status(200).json({ success: true, message: "Mensagem do sistema ignorada" });
+      }
+      
+      if (inboundMessageText.toLowerCase().includes('status: delivered') || 
+          inboundMessageText.toLowerCase().includes('message sent') || 
+          inboundMessageText.toLowerCase().includes('integration')) {
+        console.log(`🔄 Mensagem ignorada - parece ser resposta automática do sistema: "${inboundMessageText}"`);
+        return res.status(200).json({ success: true, message: "Resposta automática ignorada" });
+      }
     }
     
     console.log(`Mensagem recebida do telefone ${inboundPhoneNumber}: "${inboundMessageText}"`);
