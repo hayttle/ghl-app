@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import cors from 'cors';
-import { validateWebhookSignature } from './webhook-validator';
 
 // Configuração de Rate Limiting
 export const rateLimiter = rateLimit({
@@ -35,13 +34,29 @@ export const authRateLimiter = rateLimit({
 
 // Configuração CORS restritiva
 export const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-    'https://app.gohighlevel.com',
-    'https://marketplace.leadconnectorhq.com',
-    'https://b075774f803b.ngrok-free.app' // Seu domínio atual
-  ],
+  origin: function (origin: string | undefined, callback: Function) {
+    // Permite webhooks sem origin (Evolution API)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Lista de origens permitidas
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+      'https://app.gohighlevel.com',
+      'https://marketplace.leadconnectorhq.com',
+      'https://b075774f803b.ngrok-free.app' // Seu domínio atual
+    ];
+    
+    // Verifica se a origem está na lista permitida
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`🚨 Tentativa de acesso CORS de origem não permitida: ${origin}`);
+      callback(new Error('Origem não permitida pelo CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-GHL-Client-ID', 'X-GHL-Client-Secret'],
   credentials: true,
   maxAge: 86400 // 24 horas
 };
@@ -78,7 +93,14 @@ export const validateWebhookOrigin = (req: Request, res: Response, next: NextFun
   
   // Valida se é da Evolution API
   if (req.path === '/webhook/evolution') {
-    if (!userAgent.includes('Evolution') && !origin.includes(process.env.EVOLUTION_API_URL || '')) {
+    // Evolution API geralmente vem diretamente (sem origin) ou de IPs específicos
+    // Permite se não tiver origin (webhook direto) ou se vier da URL configurada
+    const hasValidOrigin = !origin || 
+                          origin.includes(process.env.EVOLUTION_API_URL || '') ||
+                          userAgent.includes('Evolution') ||
+                          userAgent.includes('evolution');
+    
+    if (!hasValidOrigin) {
       console.warn(`🚨 Tentativa de webhook Evolution de origem suspeita: ${origin} - User-Agent: ${userAgent}`);
       return res.status(403).json({
         success: false,

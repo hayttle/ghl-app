@@ -96,7 +96,6 @@ console.log('=== CONFIGURAÇÕES CARREGADAS ===');
 console.log('Variáveis de ambiente EVOLUTION:');
 console.log('  EVOLUTION_API_URL:', process.env.EVOLUTION_API_URL);
 console.log('  EVOLUTION_API_KEY:', process.env.EVOLUTION_API_KEY ? '***CONFIGURADA***' : 'NÃO CONFIGURADA');
-console.log('  EVOLUTION_WEBHOOK_SECRET:', process.env.EVOLUTION_WEBHOOK_SECRET ? '***CONFIGURADA***' : 'NÃO CONFIGURADA');
 console.log('  EVOLUTION_INSTANCE_NAME: DINÂMICO (por instalação)');
 console.log('');
 
@@ -120,16 +119,13 @@ console.log('GoHighLevel:', {
   apiDomain: process.env.GHL_API_DOMAIN || 'não configurado',
   hasClientId: !!process.env.GHL_APP_CLIENT_ID,
   hasClientSecret: !!process.env.GHL_APP_CLIENT_SECRET,
-  hasSSOKey: !!process.env.GHL_APP_SSO_KEY,
-  hasWebhookSecret: !!process.env.GHL_WEBHOOK_SECRET
+  hasSSOKey: !!process.env.GHL_APP_SSO_KEY
 });
 console.log('Segurança:', {
-  hasInternalApiKey: !!process.env.INTERNAL_API_KEY,
-  hasGHLWebhookSecret: !!process.env.GHL_WEBHOOK_SECRET,
-  hasEvolutionWebhookSecret: !!process.env.EVOLUTION_WEBHOOK_SECRET,
   corsEnabled: true,
   rateLimitingEnabled: true,
-  securityHeadersEnabled: true
+  securityHeadersEnabled: true,
+  ghlCredentialsValidation: 'ATIVADO (sistema simplificado)'
 });
 console.log('================================');
 
