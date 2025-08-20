@@ -18,6 +18,7 @@ Sistema de integração bidirecional entre **GoHighLevel CRM** e **Evolution API
 - **🗑️ Desinstalação Automática**: Via webhook GHL
 - **🧹 Validação Robusta**: InstanceName obrigatório e validações de segurança
 - **🔑 API Key Evolution**: Configuração global para autenticação ✅ **CORRIGIDO**
+- **📱 Detecção de Mídia**: Notificação automática no CRM para áudio, imagem, vídeo e documentos
 
 ## 🏗️ Arquitetura
 
@@ -479,6 +480,48 @@ GET /authorize-start?instanceName=backend_server
 7. ✅ Status da mensagem é atualizado para "delivered" no GHL
 ```
 
+### 📱 **Detecção de Mensagens de Mídia**
+
+O sistema detecta automaticamente diferentes tipos de mensagens recebidas via WhatsApp e as notifica no CRM de forma adequada.
+
+#### **Tipos de Mensagem Suportados:**
+
+- **📝 Texto**: Mensagens de texto normais
+- **🖼️ Imagem**: Arquivos de imagem (JPG, PNG, etc.)
+- **🎵 Áudio**: Mensagens de voz e arquivos de áudio
+- **🎬 Vídeo**: Arquivos de vídeo
+- **📄 Documento**: Arquivos PDF, DOC, etc.
+
+#### **Como Funciona:**
+
+```
+1. Cliente envia mensagem de mídia pelo WhatsApp
+2. Evolution API detecta o tipo da mensagem
+3. Sistema identifica automaticamente o tipo:
+   - imageMessage → [IMAGEM]
+   - audioMessage → [ÁUDIO]
+   - videoMessage → [VÍDEO]
+   - documentMessage → [DOCUMENTO]
+4. Mensagem é sincronizada no GHL com marcador apropriado
+5. ✅ CRM recebe notificação clara do tipo de conteúdo
+6. ❌ NENHUMA resposta automática é enviada ao cliente
+```
+
+#### **Exemplo no CRM:**
+
+- **Mensagem de texto**: "Olá, como posso ajudar?"
+- **Mensagem de áudio**: "[ÁUDIO]"
+- **Mensagem de imagem**: "[IMAGEM]"
+- **Mensagem de vídeo**: "[VÍDEO]"
+- **Mensagem de documento**: "[DOCUMENTO]"
+
+#### **Vantagens:**
+
+- ✅ **Notificação Clara**: CRM sabe exatamente o tipo de conteúdo recebido
+- ✅ **Sem Resposta Automática**: Sistema não interfere na comunicação
+- ✅ **Processamento Normal**: Mensagens seguem fluxo padrão de sincronização
+- ✅ **Logs Informativos**: Sistema registra tipo de mensagem para auditoria
+
 ## 📊 Monitoramento e Status
 
 ### Verificação de Integrações
@@ -522,6 +565,12 @@ npm run dev
 - **Configuração Centralizada**: Uma única API Key para todas as instâncias
 - **Autenticação Robusta**: Validação automática com Evolution API
 - **Status de Mensagens**: Atualização automática para "delivered" funcionando
+
+### ✅ **Detecção Inteligente de Mídia**
+- **Identificação Automática**: Detecta áudio, imagem, vídeo e documentos
+- **Notificação no CRM**: Marca mensagens com `[ÁUDIO]`, `[IMAGEM]`, `[VÍDEO]`, `[DOCUMENTO]`
+- **Sem Interferência**: Nenhuma resposta automática é enviada ao cliente
+- **Processamento Normal**: Mensagens seguem fluxo padrão de sincronização
 
 ## 🛡️ **Sistema de Segurança Simplificado**
 
@@ -823,12 +872,15 @@ Para dúvidas ou problemas:
 
 ---
 
-**Versão**: 2.1.0  
+**Versão**: 2.2.0  
 **Última Atualização**: Agosto 2025  
 **Status**: ✅ **PRODUÇÃO - FUNCIONANDO 100%**
 
 ### 🎉 **Últimas Correções Implementadas**
 
+- ✅ **Detecção de Mídia**: Sistema identifica automaticamente áudio, imagem, vídeo e documentos
+- ✅ **Notificação no CRM**: Mensagens de mídia marcadas com `[ÁUDIO]`, `[IMAGEM]`, `[VÍDEO]`, `[DOCUMENTO]`
+- ✅ **Sem Resposta Automática**: Sistema apenas notifica, não interfere na comunicação
 - ✅ **API Key Evolution**: Configuração global funcionando
 - ✅ **Integração CRM → WhatsApp**: Mensagens sendo enviadas com sucesso
 - ✅ **Status de Mensagens**: Atualização automática para "delivered" funcionando
