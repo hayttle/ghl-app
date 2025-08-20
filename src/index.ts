@@ -1,6 +1,7 @@
 import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
+import cors from "cors";
 import { GHL } from "./ghl";
 import { json } from "body-parser";
 import axios, { AxiosError } from "axios";
@@ -9,25 +10,83 @@ import { TokenType, AppUserType, InstallationDetails, IntegrationStatus } from "
 import { IntegrationService, IntegrationConfig } from "./integration-service";
 import { EvolutionApiService } from "./evolution-api";
 
+// Middleware de segurança
+import {
+  rateLimiter,
+  webhookRateLimiter,
+  authRateLimiter,
+  corsOptions,
+  validateApiKey,
+  validateWebhookOrigin,
+  sanitizeInput,
+  secureLogging,
+  securityHeaders,
+  validatePayloadSize,
+  timingAttackProtection
+} from "./security-middleware";
+
+import { validateGHLWebhook, validateEvolutionWebhook } from "./webhook-validator";
+import { securityConfig, validateSecurityConfig } from "./security-config";
+
 const path = __dirname + "/ui/dist/";
 
 dotenv.config();
+
+// Validação de configuração de segurança
+const securityWarnings = validateSecurityConfig();
+if (securityWarnings.length > 0) {
+  console.log('🚨 AVISOS DE SEGURANÇA:');
+  securityWarnings.forEach(warning => console.log(warning));
+}
+
 const app: Express = express();
-app.use(json({ type: 'application/json' }))
+
+// ========================================
+// MIDDLEWARE DE SEGURANÇA
+// ========================================
+
+// Headers de segurança básicos
+app.use(securityHeaders);
+
+// CORS restritivo
+app.use(cors(corsOptions));
+
+// Rate limiting global
+app.use(rateLimiter);
+
+// Validação de tamanho de payload
+app.use(validatePayloadSize);
+
+// Sanitização de input
+app.use(sanitizeInput);
+
+// Logging seguro
+app.use(secureLogging);
+
+// Proteção contra ataques de timing
+app.use(timingAttackProtection);
+
+// Parser de JSON com limite de tamanho
+app.use(json({ 
+  type: 'application/json',
+  limit: securityConfig.payload.maxSize
+}));
+
 app.use(cookieParser());
 
 app.use(express.static(path));
 
 const ghl = new GHL();
 
-// Configuração do serviço de integração - MOVIDA PARA DEPOIS DO dotenv.config()
-const integrationConfig: IntegrationConfig = {
+// Configuração base do serviço de integração
+const baseIntegrationConfig: IntegrationConfig = {
   evolutionApiUrl: process.env.EVOLUTION_API_URL || 'http://localhost:8080',
   evolutionApiKey: process.env.EVOLUTION_API_KEY || '',
-  defaultInstanceName: process.env.EVOLUTION_INSTANCE_NAME || 'ghl_integration'
+  defaultInstanceName: 'ghl_integration' // Valor padrão apenas para fallback
 };
 
-const integrationService = new IntegrationService(integrationConfig);
+// Serviço de integração será configurado dinamicamente por instalação
+const integrationService = new IntegrationService(baseIntegrationConfig);
 
 const port = process.env.PORT || 3000;
 
@@ -37,6 +96,7 @@ console.log('Variáveis de ambiente EVOLUTION:');
 console.log('  EVOLUTION_API_URL:', process.env.EVOLUTION_API_URL);
 console.log('  EVOLUTION_API_KEY:', process.env.EVOLUTION_API_KEY ? '***CONFIGURADA***' : 'NÃO CONFIGURADA');
 console.log('  EVOLUTION_INSTANCE_NAME:', process.env.EVOLUTION_INSTANCE_NAME);
+console.log('  EVOLUTION_WEBHOOK_SECRET:', process.env.EVOLUTION_WEBHOOK_SECRET ? '***CONFIGURADA***' : 'NÃO CONFIGURADA');
 console.log('');
 
 console.log('Servidor:', {
@@ -51,38 +111,57 @@ console.log('Banco de Dados:', {
   hasPassword: !!process.env.DB_PASSWORD
 });
 console.log('Evolution API:', {
-  url: integrationConfig.evolutionApiUrl,
-  instanceName: integrationConfig.defaultInstanceName,
-  hasApiKey: !!integrationConfig.evolutionApiKey
+  url: baseIntegrationConfig.evolutionApiUrl,
+  instanceName: baseIntegrationConfig.defaultInstanceName,
+  hasApiKey: !!baseIntegrationConfig.evolutionApiKey
 });
 console.log('GoHighLevel:', {
   apiDomain: process.env.GHL_API_DOMAIN || 'não configurado',
   hasClientId: !!process.env.GHL_APP_CLIENT_ID,
   hasClientSecret: !!process.env.GHL_APP_CLIENT_SECRET,
-  hasSSOKey: !!process.env.GHL_APP_SSO_KEY
+  hasSSOKey: !!process.env.GHL_APP_SSO_KEY,
+  hasWebhookSecret: !!process.env.GHL_WEBHOOK_SECRET
+});
+console.log('Segurança:', {
+  hasInternalApiKey: !!process.env.INTERNAL_API_KEY,
+  hasGHLWebhookSecret: !!process.env.GHL_WEBHOOK_SECRET,
+  hasEvolutionWebhookSecret: !!process.env.EVOLUTION_WEBHOOK_SECRET,
+  corsEnabled: true,
+  rateLimitingEnabled: true,
+  securityHeadersEnabled: true
 });
 console.log('================================');
 
-// Middleware para logging
-app.use((req: Request, res: Response, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  next();
-});
+// Middleware de logging seguro já aplicado acima
 
-// Middleware para tratamento de erros
+// Middleware para tratamento de erros seguro
 app.use((error: any, req: Request, res: Response, next: any) => {
-  console.error('Erro não tratado:', error);
+  // Log seguro sem expor dados sensíveis
+  console.error('Erro não tratado:', {
+    message: error.message,
+    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    path: req.path,
+    method: req.method,
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
+  
+  // Resposta genérica para produção
   res.status(500).json({
     success: false,
-    message: 'Erro interno do servidor',
-    error: process.env.NODE_ENV === 'development' ? error.message : 'Erro interno'
+    message: process.env.NODE_ENV === 'development' ? 'Erro interno do servidor' : 'Erro interno',
+    error: process.env.NODE_ENV === 'development' ? error.message : 'Erro interno',
+    timestamp: new Date().toISOString(),
+    requestId: req.headers['x-request-id'] || 'unknown'
   });
 });
 
 
 
 // Rota intermediária para capturar instanceName antes do OAuth
-app.get("/authorize-start", async (req: Request, res: Response) => {
+app.get("/authorize-start", 
+  authRateLimiter, // Rate limiting para autenticação
+  async (req: Request, res: Response) => {
   try {
     const { instanceName } = req.query;
     
@@ -118,7 +197,9 @@ app.get("/authorize-start", async (req: Request, res: Response) => {
   }
 });
 
-app.get("/authorize-handler", async (req: Request, res: Response) => {
+app.get("/authorize-handler", 
+  authRateLimiter, // Rate limiting para autenticação
+  async (req: Request, res: Response) => {
   try {
     const { code } = req.query;
     console.log("🔐 Handler de autorização chamado com code:", code);
@@ -143,8 +224,10 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
   }
 });
 
-// Rotas de integração
-app.post("/integration/setup", async (req: Request, res: Response) => {
+// Rotas de integração (protegidas por API Key)
+app.post("/integration/setup", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const { resourceId, evolutionInstanceName } = req.body;
     
@@ -155,7 +238,14 @@ app.post("/integration/setup", async (req: Request, res: Response) => {
       });
     }
 
-    const result = await integrationService.setupIntegration(resourceId, evolutionInstanceName);
+    // Configura o serviço com o instanceName específico desta instalação
+    const dynamicConfig: IntegrationConfig = {
+      ...baseIntegrationConfig,
+      defaultInstanceName: evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+    };
+    
+    const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+    const result = await dynamicIntegrationService.setupIntegration(resourceId, evolutionInstanceName);
     
     if (result.success) {
       res.status(200).json(result);
@@ -172,7 +262,9 @@ app.post("/integration/setup", async (req: Request, res: Response) => {
   }
 });
 
-app.post("/integration/sync-contacts", async (req: Request, res: Response) => {
+app.post("/integration/sync-contacts", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const { resourceId } = req.body;
     
@@ -183,7 +275,23 @@ app.post("/integration/sync-contacts", async (req: Request, res: Response) => {
       });
     }
 
-    const result = await integrationService.syncContacts(resourceId);
+    // Busca o instanceName específico desta instalação
+    const installationDetails = await ghl.model.getInstallationInfo(resourceId);
+    if (!installationDetails) {
+      return res.status(404).json({
+        success: false,
+        message: 'Instalação não encontrada'
+      });
+    }
+
+    // Configura o serviço com o instanceName específico desta instalação
+    const dynamicConfig: IntegrationConfig = {
+      ...baseIntegrationConfig,
+      defaultInstanceName: installationDetails.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+    };
+    
+    const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+    const result = await dynamicIntegrationService.syncContacts(resourceId);
     
     if (result.success) {
       res.status(200).json(result);
@@ -200,7 +308,9 @@ app.post("/integration/sync-contacts", async (req: Request, res: Response) => {
   }
 });
 
-app.post("/integration/send-message", async (req: Request, res: Response) => {
+app.post("/integration/send-message", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const { resourceId, contactId, message, messageId } = req.body;
     
@@ -216,7 +326,23 @@ app.post("/integration/send-message", async (req: Request, res: Response) => {
 
     console.log(`📝 Enviando mensagem com messageId: ${messageId}`);
 
-    const result = await integrationService.sendMessageToWhatsApp(resourceId, contactId, message, messageId);
+    // Busca o instanceName específico desta instalação
+    const installationDetails = await ghl.model.getInstallationInfo(resourceId);
+    if (!installationDetails) {
+      return res.status(404).json({
+        success: false,
+        message: 'Instalação não encontrada'
+      });
+    }
+
+    // Configura o serviço com o instanceName específico desta instalação
+    const dynamicConfig: IntegrationConfig = {
+      ...baseIntegrationConfig,
+      defaultInstanceName: installationDetails.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+    };
+    
+    const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+    const result = await dynamicIntegrationService.sendMessageToWhatsApp(resourceId, contactId, message, messageId);
     
     if (result.success) {
       res.status(200).json(result);
@@ -233,7 +359,9 @@ app.post("/integration/send-message", async (req: Request, res: Response) => {
   }
 });
 
-app.get("/integration/status", async (req: Request, res: Response) => {
+app.get("/integration/status", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const result = await integrationService.checkIntegrationStatuses();
     res.status(200).json(result);
@@ -248,7 +376,9 @@ app.get("/integration/status", async (req: Request, res: Response) => {
 });
 
 // Rotas de exemplo mantidas para compatibilidade
-app.get("/example-api-call", async (req: Request, res: Response) => {
+app.get("/example-api-call", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const companyId = req.query.companyId as string;
     if (!companyId) {
@@ -286,7 +416,9 @@ app.get("/example-api-call", async (req: Request, res: Response) => {
   }
 });
 
-app.get("/example-api-call-location", async (req: Request, res: Response) => {
+app.get("/example-api-call-location", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const { companyId, locationId } = req.query;
     
@@ -341,8 +473,12 @@ app.get("/example-api-call-location", async (req: Request, res: Response) => {
   }
 });
 
-// Webhook handler refatorado
-app.post("/webhook/ghl", async (req: Request, res: Response) => {
+// Webhook handler refatorado com segurança
+app.post("/webhook/ghl", 
+  webhookRateLimiter, // Rate limiting específico para webhooks
+  validateWebhookOrigin, // Valida origem do webhook
+  validateGHLWebhook, // Valida assinatura do webhook
+  async (req: Request, res: Response) => {
   try {
     console.log("=== WEBHOOK GHL RECEBIDO ===");
     console.log("Body completo:", JSON.stringify(req.body, null, 2));
@@ -398,26 +534,43 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
         break;
 
       case 'INSTALL':
-        console.log("📦 Evento INSTALL detectado - configurando integração...");
+  console.log("📦 Evento INSTALL detectado - configurando integração...");
+  
+  if (locationId) {
+    console.log(`✅ Configurando integração para locationId: ${locationId}`);
+    try {
+      // Busca o instanceName específico desta instalação
+      const installationDetails = await ghl.model.getInstallationInfo(locationId);
+      if (installationDetails && installationDetails.evolutionInstanceName) {
+        console.log(`🔧 Usando instanceName: ${installationDetails.evolutionInstanceName} para locationId: ${locationId}`);
         
-        if (locationId) {
-          console.log(`✅ Configurando integração para locationId: ${locationId}`);
-          try {
-            await integrationService.setupIntegration(locationId);
-            console.log(`✅ Integração configurada com sucesso para locationId: ${locationId}`);
-          } catch (error: any) {
-            console.error(`❌ Erro ao configurar integração para locationId ${locationId}:`, error);
-          }
-        } else {
-          console.log("⚠️ INSTALL sem locationId - não é possível configurar integração");
-        }
+        // Configura o serviço com o instanceName específico desta instalação
+        const dynamicConfig: IntegrationConfig = {
+          ...baseIntegrationConfig,
+          defaultInstanceName: installationDetails.evolutionInstanceName
+        };
         
-        res.status(200).json({ 
-          success: true, 
-          message: "Evento de instalação processado",
-          data: { locationId, companyId, eventType }
-        });
-        break;
+        const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+        await dynamicIntegrationService.setupIntegration(locationId);
+        console.log(`✅ Integração configurada com sucesso para locationId: ${locationId}`);
+      } else {
+        console.log(`⚠️ InstanceName não encontrado para locationId: ${locationId}, usando configuração padrão`);
+        await integrationService.setupIntegration(locationId);
+        console.log(`✅ Integração configurada com sucesso para locationId: ${locationId}`);
+      }
+    } catch (error: any) {
+      console.error(`❌ Erro ao configurar integração para locationId ${locationId}:`, error);
+    }
+  } else {
+    console.log("⚠️ INSTALL sem locationId - não é possível configurar integração");
+  }
+  
+  res.status(200).json({ 
+    success: true, 
+    message: "Evento de instalação processado",
+    data: { locationId, companyId, eventType }
+  });
+  break;
 
       case "OutboundMessage":
         console.log("📤 Evento OutboundMessage detectado - processando mensagem...");
@@ -448,23 +601,42 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
             console.log(`💬 Mensagem: ${message}`);
 
             // Atualiza conversationProviderId na instalação
-            const installationDetails = await ghl.model.getInstallationInfo(locationId);
-            if (installationDetails) {
-              await ghl.model.saveInstallationInfo({
-                ...installationDetails,
-                conversationProviderId: conversationProviderId
-              });
-              console.log(`✅ ConversationProviderId atualizado: ${conversationProviderId}`);
-            }
+const installationDetails = await ghl.model.getInstallationInfo(locationId);
+if (installationDetails) {
+  await ghl.model.saveInstallationInfo({
+    ...installationDetails,
+    conversationProviderId: conversationProviderId
+  });
+  console.log(`✅ ConversationProviderId atualizado: ${conversationProviderId}`);
+}
 
-            // Envia mensagem via Evolution API
-            console.log(`🔄 Enviando mensagem com messageId: ${req.body.messageId}`);
-            const result = await integrationService.sendMessageToWhatsApp(
-              locationId,
-              contactId,
-              message,
-              req.body.messageId // Passa o messageId para atualização automática de status
-            );
+// Verifica se a instalação existe para usar o instanceName
+if (!installationDetails) {
+  console.error(`❌ Instalação não encontrada para locationId: ${locationId}`);
+  return res.status(500).json({
+    success: false,
+    message: "Instalação não encontrada"
+  });
+}
+
+// Configura o serviço com o instanceName específico desta instalação
+const dynamicConfig: IntegrationConfig = {
+  ...baseIntegrationConfig,
+  defaultInstanceName: installationDetails.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+};
+
+console.log(`🔧 Usando instanceName: ${dynamicConfig.defaultInstanceName} para locationId: ${locationId}`);
+
+const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+
+// Envia mensagem via Evolution API
+console.log(`🔄 Enviando mensagem com messageId: ${req.body.messageId}`);
+const result = await dynamicIntegrationService.sendMessageToWhatsApp(
+  locationId,
+  contactId,
+  message,
+  req.body.messageId // Passa o messageId para atualização automática de status
+);
 
             if (result.success) {
               console.log("✅ Mensagem enviada com sucesso via Evolution API");
@@ -563,8 +735,12 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
   }
 });
 
-// Webhook handler da Evolution API refatorado
-app.post("/webhook/evolution", async (req: Request, res: Response) => {
+// Webhook handler da Evolution API refatorado com segurança
+app.post("/webhook/evolution", 
+  webhookRateLimiter, // Rate limiting específico para webhooks
+  validateWebhookOrigin, // Valida origem do webhook
+  validateEvolutionWebhook, // Valida assinatura do webhook
+  async (req: Request, res: Response) => {
   try {
     console.log("Webhook da Evolution API recebido:", req.body);
     
@@ -595,29 +771,36 @@ app.post("/webhook/evolution", async (req: Request, res: Response) => {
       console.log('Detalhes das integrações:', JSON.stringify(activeIntegrations, null, 2));
       
       for (const integration of activeIntegrations) {
-        const resourceId = integration.locationId || integration.companyId;
-        if (!resourceId) continue;
+  const resourceId = integration.locationId || integration.companyId;
+  if (!resourceId) continue;
 
-        try {
-          const result = await integrationService.processIncomingMessage(
-            inboundPhoneNumber,
-            inboundMessageText,
-            resourceId,
-            pushName
-          );
+  try {
+    // Configura o serviço com o instanceName específico desta integração
+    const dynamicConfig: IntegrationConfig = {
+      ...baseIntegrationConfig,
+      defaultInstanceName: integration.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+    };
+    
+    const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+    const result = await dynamicIntegrationService.processIncomingMessage(
+      inboundPhoneNumber,
+      inboundMessageText,
+      resourceId,
+      pushName
+    );
 
-          if (result.success) {
-            console.log(`Mensagem processada com sucesso para o recurso: ${resourceId}`);
-            return res.status(200).json({
-              success: true,
-              message: "Mensagem processada e sincronizada com GHL"
-            });
-          }
-        } catch (error) {
-          console.error(`Erro ao processar mensagem para o recurso ${resourceId}:`, error);
-          continue;
-        }
-      }
+    if (result.success) {
+      console.log(`Mensagem processada com sucesso para o recurso: ${resourceId}`);
+      return res.status(200).json({
+        success: true,
+        message: "Mensagem processada e sincronizada com GHL"
+      });
+    }
+  } catch (error) {
+    console.error(`Erro ao processar mensagem para o recurso ${resourceId}:`, error);
+    continue;
+  }
+}
 
       console.log("Nenhuma integração ativa encontrada para processar a mensagem");
       res.status(200).json({
@@ -641,7 +824,9 @@ app.post("/webhook/evolution", async (req: Request, res: Response) => {
 });
 
 // Rota para envio direto de mensagem (mantida para compatibilidade)
-app.post("/send-message-evolution", async (req: Request, res: Response) => {
+app.post("/send-message-evolution", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     console.log("=== INÍCIO DO ENVIO DE MENSAGEM ===");
     console.log("Corpo da requisição:", req.body);
@@ -656,14 +841,30 @@ app.post("/send-message-evolution", async (req: Request, res: Response) => {
       });
     }
 
+    // Busca o instanceName específico desta instalação
+    const installationDetails = await ghl.model.getInstallationInfo(locationId);
+    if (!installationDetails) {
+      return res.status(404).json({
+        success: false,
+        message: 'Instalação não encontrada'
+      });
+    }
+
     console.log("Parâmetros recebidos:", { locationId, contactId, message, messageId });
     console.log("Configuração Evolution API:", {
-      url: integrationConfig.evolutionApiUrl,
-      instanceName: integrationConfig.defaultInstanceName,
-      hasApiKey: !!integrationConfig.evolutionApiKey
+      url: baseIntegrationConfig.evolutionApiUrl,
+      instanceName: installationDetails.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName,
+      hasApiKey: !!baseIntegrationConfig.evolutionApiKey
     });
 
-    const result = await integrationService.sendMessageToWhatsApp(locationId, contactId, message, messageId);
+    // Configura o serviço com o instanceName específico desta instalação
+    const dynamicConfig: IntegrationConfig = {
+      ...baseIntegrationConfig,
+      defaultInstanceName: installationDetails.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+    };
+    
+    const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+    const result = await dynamicIntegrationService.sendMessageToWhatsApp(locationId, contactId, message, messageId);
     
     console.log("Resultado do envio:", result);
     
@@ -684,7 +885,9 @@ app.post("/send-message-evolution", async (req: Request, res: Response) => {
   }
 });
 
-app.post("/decrypt-sso", async (req: Request, res: Response) => {
+app.post("/decrypt-sso", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const { key } = req.body || {};
     
@@ -758,7 +961,9 @@ app.get("/config", (req: Request, res: Response) => {
 });
 
 // Endpoint temporário para atualizar status de integração
-app.post("/debug/update-integration-status", async (req: Request, res: Response) => {
+app.post("/debug/update-integration-status", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const { resourceId, status } = req.body;
     
@@ -787,7 +992,9 @@ app.post("/debug/update-integration-status", async (req: Request, res: Response)
 });
 
 // Rota para desinstalação manual do app
-app.delete("/integration/uninstall/:resourceId", async (req: Request, res: Response) => {
+app.delete("/integration/uninstall/:resourceId", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const { resourceId } = req.params;
     
@@ -844,7 +1051,9 @@ app.delete("/integration/uninstall/:resourceId", async (req: Request, res: Respo
 });
 
 // Rota para listar todas as instalações (útil para debug)
-app.get("/integration/installations", async (req: Request, res: Response) => {
+app.get("/integration/installations", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     console.log('📋 Listando todas as instalações...');
     
@@ -882,35 +1091,37 @@ app.get("/integration/installations", async (req: Request, res: Response) => {
 });
 
 // Teste de conectividade com Evolution API
-app.get("/test-evolution", async (req: Request, res: Response) => {
+app.get("/test-evolution", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     console.log('=== TESTE DE CONECTIVIDADE EVOLUTION API ===');
-    console.log('Configuração:', {
-      url: integrationConfig.evolutionApiUrl,
-      instanceName: integrationConfig.defaultInstanceName,
-      hasApiKey: !!integrationConfig.evolutionApiKey
-    });
+console.log('Configuração:', {
+  url: baseIntegrationConfig.evolutionApiUrl,
+  instanceName: baseIntegrationConfig.defaultInstanceName,
+  hasApiKey: !!baseIntegrationConfig.evolutionApiKey
+});
 
-    // Teste direto na API para ver o status real
-    console.log('Testando status direto na API...');
-    const axios = require('axios');
-    const directResponse = await axios.get(
-      `${integrationConfig.evolutionApiUrl}/instance/connectionState/${integrationConfig.defaultInstanceName}`,
-      {
-        headers: {
-          'apikey': integrationConfig.evolutionApiKey
-        }
-      }
-    );
+// Teste direto na API para ver o status real
+console.log('Testando status direto na API...');
+const axios = require('axios');
+const directResponse = await axios.get(
+  `${baseIntegrationConfig.evolutionApiUrl}/instance/connectionState/${baseIntegrationConfig.defaultInstanceName}`,
+  {
+    headers: {
+      'apikey': baseIntegrationConfig.evolutionApiKey
+    }
+  }
+);
     
     console.log('Resposta direta da API:', directResponse.data);
     const directStatus = directResponse.data.state;
     
     const evolutionService = new EvolutionApiService({
-      baseUrl: integrationConfig.evolutionApiUrl,
-      apiKey: integrationConfig.evolutionApiKey,
-      instanceName: integrationConfig.defaultInstanceName
-    });
+  baseUrl: baseIntegrationConfig.evolutionApiUrl,
+  apiKey: baseIntegrationConfig.evolutionApiKey,
+  instanceName: baseIntegrationConfig.defaultInstanceName
+});
 
     // Testa se consegue conectar
     console.log('Testando conectividade via serviço...');
@@ -920,36 +1131,38 @@ app.get("/test-evolution", async (req: Request, res: Response) => {
     console.log('Resultado do teste via serviço:', isConnected ? 'CONECTADO' : 'DESCONECTADO');
     
     res.json({
-      success: true,
-      message: "Teste de conectividade com Evolution API",
-      config: {
-        url: integrationConfig.evolutionApiUrl,
-        instanceName: integrationConfig.defaultInstanceName,
-        hasApiKey: !!integrationConfig.evolutionApiKey
-      },
-      directApiResponse: directResponse.data,
-      directStatus: directStatus,
-      serviceStatus: isConnected ? 'connected' : 'disconnected',
-      timestamp: new Date().toISOString()
-    });
+  success: true,
+  message: "Teste de conectividade com Evolution API",
+  config: {
+    url: baseIntegrationConfig.evolutionApiUrl,
+    instanceName: baseIntegrationConfig.defaultInstanceName,
+    hasApiKey: !!baseIntegrationConfig.evolutionApiKey
+  },
+  directApiResponse: directResponse.data,
+  directStatus: directStatus,
+  serviceStatus: isConnected ? 'connected' : 'disconnected',
+  timestamp: new Date().toISOString()
+});
   } catch (error: any) {
     console.error('Erro no teste de conectividade:', error);
     res.status(500).json({
-      success: false,
-      message: "Erro ao testar Evolution API",
-      error: error.message,
-      config: {
-        url: integrationConfig.evolutionApiUrl,
-        instanceName: integrationConfig.defaultInstanceName,
-        hasApiKey: !!integrationConfig.evolutionApiKey
-      },
-      timestamp: new Date().toISOString()
-    });
+  success: false,
+  message: "Erro ao testar Evolution API",
+  error: error.message,
+  config: {
+    url: baseIntegrationConfig.evolutionApiUrl,
+    instanceName: baseIntegrationConfig.defaultInstanceName,
+    hasApiKey: !!baseIntegrationConfig.evolutionApiKey
+  },
+  timestamp: new Date().toISOString()
+});
   }
 });
 
 // Rota para testar atualização de status de mensagem (PUT)
-app.put("/integration/update-message-status/:resourceId/:messageId", async (req: Request, res: Response) => {
+app.put("/integration/update-message-status/:resourceId/:messageId", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const { resourceId, messageId } = req.params;
     
@@ -990,7 +1203,9 @@ app.put("/integration/update-message-status/:resourceId/:messageId", async (req:
 });
 
 // Rota para testar atualização de status de mensagem (GET - para facilitar testes)
-app.get("/integration/update-message-status/:resourceId/:messageId", async (req: Request, res: Response) => {
+app.get("/integration/update-message-status/:resourceId/:messageId", 
+  validateApiKey, // Requer API Key válida
+  async (req: Request, res: Response) => {
   try {
     const { resourceId, messageId } = req.params;
     
@@ -1033,5 +1248,5 @@ app.get("/integration/update-message-status/:resourceId/:messageId", async (req:
 app.listen(port, () => {
   console.log(`GHL Integration App listening on port ${port}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`Evolution API URL: ${integrationConfig.evolutionApiUrl}`);
+  console.log(`Evolution API URL: ${baseIntegrationConfig.evolutionApiUrl}`);
 });
