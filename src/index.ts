@@ -39,12 +39,14 @@ if (securityWarnings.length > 0) {
 const app: Express = express();
 
 // ========================================
-// CONFIGURAÇÃO DE PROXY (apenas em desenvolvimento)
+// CONFIGURAÇÃO DE PROXY (para produção e desenvolvimento)
 // ========================================
+// Em produção, confia no proxy para rate-limit funcionar corretamente
+app.set('trust proxy', true);
 if (process.env.NODE_ENV === 'development') {
-  // Configuração mais segura para ngrok - confia apenas no primeiro proxy
-  app.set('trust proxy', 1);
-  console.log('🔧 Modo desenvolvimento: proxy confiável limitado ativado para ngrok');
+  console.log('🔧 Modo desenvolvimento: proxy confiável ativado para ngrok');
+} else {
+  console.log('🔧 Modo produção: proxy confiável ativado para rate-limit');
 }
 
 // ========================================
@@ -112,7 +114,7 @@ console.log('================================');
 // Middleware de logging seguro já aplicado acima
 
 // Middleware para tratamento de erros seguro
-app.use((error: any, req: Request, res: Response) => {
+app.use((error: any, req: Request, res: Response, next: any) => {
   // Log seguro sem expor dados sensíveis
   console.error('Erro não tratado:', {
     message: error.message,
