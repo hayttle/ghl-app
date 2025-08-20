@@ -70,7 +70,7 @@ export const sanitizeInput = (req: Request, res: Response, next: NextFunction) =
   // Remove caracteres perigosos de todos os campos
   const sanitize = (obj: any): any => {
     if (typeof obj === 'string') {
-      return obj.replace(/[<>\"'&]/g, '');
+      return obj.replace(/[<>"'&]/g, '');
     }
     if (typeof obj === 'object' && obj !== null) {
       const sanitized: any = Array.isArray(obj) ? [] : {};

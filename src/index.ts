@@ -4,9 +4,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import { GHL } from "./ghl";
 import { json } from "body-parser";
-import axios, { AxiosError } from "axios";
-import * as CryptoJS from 'crypto-js';
-import { TokenType, AppUserType, InstallationDetails, IntegrationStatus } from "./model";
+import { IntegrationStatus } from "./model";
 import { IntegrationService, IntegrationConfig } from "./integration-service";
 import { EvolutionApiService } from "./evolution-api";
 
@@ -102,9 +100,7 @@ const port = process.env.PORT || 3000;
 console.log('🚀 Servidor iniciando...');
 console.log('🔧 Modo desenvolvimento: proxy confiável limitado ativado para ngrok');
 
-// Construir DATABASE_URL a partir das variáveis individuais
-const databaseUrl = process.env.DATABASE_URL || 
-  `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
+
 
 // Logs de configuração simplificados
 console.log('=== CONFIGURAÇÕES CARREGADAS ===');
@@ -116,7 +112,7 @@ console.log('================================');
 // Middleware de logging seguro já aplicado acima
 
 // Middleware para tratamento de erros seguro
-app.use((error: any, req: Request, res: Response, next: any) => {
+app.use((error: any, req: Request, res: Response) => {
   // Log seguro sem expor dados sensíveis
   console.error('Erro não tratado:', {
     message: error.message,
@@ -468,7 +464,7 @@ app.post("/webhook/ghl",
   async (req: Request, res: Response) => {
       try {
       const eventType = req.body.type;
-      const { contactId, locationId, body: message, conversationProviderId, companyId, messageId } = req.body;
+      const { locationId, companyId, messageId } = req.body;
       
       console.log("=== WEBHOOK GHL RECEBIDO ===");
       console.log("Tipo de evento:", eventType);
