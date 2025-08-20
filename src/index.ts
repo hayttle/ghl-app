@@ -742,23 +742,37 @@ app.post("/webhook/evolution",
       });
     }
     
-    // Extrair texto da mensagem de forma segura
-    let inboundMessageText = '';
-    if (messageData.message.conversation) {
-      inboundMessageText = messageData.message.conversation;
-    } else if (messageData.message.extendedTextMessage) {
-      inboundMessageText = messageData.message.extendedTextMessage.text || '';
-    } else if (messageData.message.imageMessage) {
-      inboundMessageText = '[IMAGEM]';
-    } else if (messageData.message.audioMessage) {
-      inboundMessageText = '[ÁUDIO]';
-    } else if (messageData.message.videoMessage) {
-      inboundMessageText = '[VÍDEO]';
-    } else if (messageData.message.documentMessage) {
-      inboundMessageText = '[DOCUMENTO]';
-    } else {
-      inboundMessageText = '[MENSAGEM]';
-    }
+         // Extrair texto da mensagem de forma segura
+     let inboundMessageText = '';
+     let messageType = '';
+     let isMediaMessage = false;
+     
+     if (messageData.message.conversation) {
+       inboundMessageText = messageData.message.conversation;
+       messageType = 'texto';
+     } else if (messageData.message.extendedTextMessage) {
+       inboundMessageText = messageData.message.extendedTextMessage.text || '';
+       messageType = 'texto';
+     } else if (messageData.message.imageMessage) {
+       inboundMessageText = '[IMAGEM]';
+       messageType = 'imagem';
+       isMediaMessage = true;
+     } else if (messageData.message.audioMessage) {
+       inboundMessageText = '[ÁUDIO]';
+       messageType = 'áudio';
+       isMediaMessage = true;
+     } else if (messageData.message.videoMessage) {
+       inboundMessageText = '[VÍDEO]';
+       messageType = 'vídeo';
+       isMediaMessage = true;
+     } else if (messageData.message.documentMessage) {
+       inboundMessageText = '[DOCUMENTO]';
+       messageType = 'documento';
+       isMediaMessage = true;
+     } else {
+       inboundMessageText = '[MENSAGEM]';
+       messageType = 'desconhecido';
+     }
     
     const inboundPhoneNumber = `+${messageData.key.remoteJid.replace('@s.whatsapp.net', '')}`;
     const pushName = messageData.pushName || messageData.data?.pushName;
@@ -778,11 +792,93 @@ app.post("/webhook/evolution",
       }
     }
     
-    console.log(`Mensagem recebida do telefone ${inboundPhoneNumber}: "${inboundMessageText}"`);
-    console.log(`Push Name: ${pushName}`);
-    
-    // Identificar instância
-    const instanceName = req.body.instance || req.body.instanceName || req.body.data?.instanceName || req.body.source?.instanceName;
+         console.log(`Mensagem recebida do telefone ${inboundPhoneNumber}: "${inboundMessageText}"`);
+     console.log(`Tipo de mensagem: ${messageType}`);
+     console.log(`Push Name: ${pushName}`);
+     
+     // Se for mensagem de mídia, enviar resposta automática
+     if (isMediaMessage) {
+       console.log(`📱 Mensagem de ${messageType} detectada - enviando resposta automática...`);
+       
+       try {
+         // Buscar instalação específica para obter instanceName
+         const instanceName = req.body.instance || req.body.instanceName || req.body.data?.instanceName || req.body.source?.instanceName;
+         
+         if (!instanceName) {
+           console.error("❌ NÃO É POSSÍVEL IDENTIFICAR A INSTÂNCIA para resposta automática");
+           return res.status(400).json({
+             success: false,
+             message: "Não é possível identificar a instância para resposta automática"
+           });
+         }
+         
+         // Buscar instalação específica
+         const targetInstallation = await ghl.model.getInstallationByInstanceName(instanceName);
+         
+         if (!targetInstallation) {
+           console.error(`❌ Instalação não encontrada para a instância: ${instanceName}`);
+           return res.status(404).json({
+             success: false,
+             message: `Instalação não encontrada para a instância: ${instanceName}`
+           });
+         }
+         
+         const resourceId = targetInstallation.locationId || targetInstallation.companyId;
+         
+         if (!resourceId) {
+           console.error("❌ ResourceId não encontrado na instalação");
+           return res.status(500).json({
+             success: false,
+             message: "ResourceId não encontrado na instalação"
+           });
+         }
+         
+         // Configurar serviço para a instância específica
+         const dynamicConfig: IntegrationConfig = {
+           ...baseIntegrationConfig,
+           defaultInstanceName: targetInstallation.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+         };
+         
+         const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+         
+         // Mensagem de resposta automática
+         const autoResponseMessage = `Não recebemos mensagem de ${messageType}, somente texto. Agradecemos a compreensão!`;
+         
+         // Enviar resposta automática via Evolution API
+         const autoResponseResult = await dynamicIntegrationService.sendMessageToWhatsApp(
+           inboundPhoneNumber,
+           autoResponseMessage,
+           resourceId
+         );
+         
+         if (autoResponseResult.success) {
+           console.log(`✅ Resposta automática enviada com sucesso para mensagem de ${messageType}`);
+           
+           // Retornar sucesso sem processar a mensagem de mídia no GHL
+           return res.status(200).json({
+             success: true,
+             message: `Resposta automática enviada para mensagem de ${messageType}`,
+             data: {
+               instanceName,
+               resourceId,
+               phoneNumber: inboundPhoneNumber,
+               messageType,
+               autoResponse: autoResponseMessage
+             }
+           });
+         } else {
+           console.error(`❌ Falha ao enviar resposta automática:`, autoResponseResult.error);
+           // Continuar com o processamento normal mesmo se a resposta automática falhar
+         }
+         
+       } catch (error: any) {
+         console.error(`❌ Erro ao enviar resposta automática para ${messageType}:`, error.message);
+         // Continuar com o processamento normal mesmo se a resposta automática falhar
+       }
+     }
+     
+     // Identificar instância para processamento normal
+     const instanceName = req.body.instance || req.body.instanceName || req.body.data?.instanceName || req.body.source?.instanceName;
     
     if (!instanceName) {
       console.error("❌ NÃO É POSSÍVEL IDENTIFICAR A INSTÂNCIA - mensagem será ignorada");
