@@ -1336,4 +1336,4 @@ app.listen(port, () => {
   console.log(`GHL Integration App listening on port ${port}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Evolution API URL: ${baseIntegrationConfig.evolutionApiUrl}`);
-});
+});// Deploy fix - Wed, Aug 20, 2025  6:20:32 PM
