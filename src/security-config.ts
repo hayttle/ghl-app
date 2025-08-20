@@ -90,20 +90,6 @@ export const securityConfig = {
 export const validateSecurityConfig = (): string[] => {
   const warnings: string[] = [];
   
-  // Verifica webhook secrets
-  if (!securityConfig.webhooks.ghl.secret) {
-    warnings.push('⚠️ GHL_WEBHOOK_SECRET não configurado - webhooks GHL não serão validados');
-  }
-  
-  if (!securityConfig.webhooks.evolution.secret) {
-    warnings.push('⚠️ EVOLUTION_WEBHOOK_SECRET não configurado - webhooks Evolution não serão validados');
-  }
-  
-  // Verifica API keys
-  if (!securityConfig.apiKeys.internal) {
-    warnings.push('⚠️ INTERNAL_API_KEY não configurado - rotas internas ficarão desprotegidas');
-  }
-  
   // Verifica CORS
   if (securityConfig.cors.allowedOrigins.includes('*')) {
     warnings.push('🚨 CORS configurado para aceitar qualquer origem - RISCO DE SEGURANÇA');
@@ -112,6 +98,16 @@ export const validateSecurityConfig = (): string[] => {
   // Verifica rate limiting
   if (securityConfig.rateLimit.max > 1000) {
     warnings.push('⚠️ Rate limit muito alto configurado - pode ser vulnerável a DDoS');
+  }
+  
+  // Verifica se as credenciais GHL estão configuradas
+  if (!process.env.GHL_APP_CLIENT_ID || !process.env.GHL_APP_CLIENT_SECRET) {
+    warnings.push('⚠️ GHL_APP_CLIENT_ID ou GHL_APP_CLIENT_SECRET não configurados - instalação não funcionará');
+  }
+  
+  // Verifica se a Evolution API está configurada
+  if (!process.env.EVOLUTION_API_URL || !process.env.EVOLUTION_API_KEY) {
+    warnings.push('⚠️ EVOLUTION_API_URL ou EVOLUTION_API_KEY não configurados - integração não funcionará');
   }
   
   return warnings;
