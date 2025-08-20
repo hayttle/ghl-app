@@ -348,7 +348,7 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
     console.log("Body completo:", JSON.stringify(req.body, null, 2));
     
     const eventType = req.body.type;
-    const { contactId, locationId, message, conversationProviderId, companyId, messageId } = req.body;
+    const { contactId, locationId, body: message, conversationProviderId, companyId, messageId } = req.body;
 
     console.log(`📡 Tipo de evento: ${eventType}`);
     console.log(`📍 LocationId: ${locationId}`);
@@ -427,7 +427,8 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
         console.log("  - conversationProviderId:", conversationProviderId);
         console.log("  - locationId:", locationId);
         console.log("  - contactId:", contactId);
-        console.log("  - message:", message);
+        console.log("  - message (extraído de body):", message);
+        console.log("  - req.body.body (original):", req.body.body);
         console.log("  - direction:", req.body.direction);
         
         if (conversationProviderId && locationId && contactId && message) {

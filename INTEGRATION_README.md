@@ -12,6 +12,11 @@ Sistema de integração bidirecional entre **GoHighLevel CRM** e **Evolution API
 - **📨 Processamento de Mensagens**: Recebidas e enviadas
 - **🛡️ Prevenção de Loops**: Sistema anti-repetição
 - **📊 Monitoramento**: Status de integrações e sincronização
+- **🔐 OAuth2 GHL**: Integração oficial com marketplace GoHighLevel
+- **🆕 InstanceName Dinâmico**: Captura via rota intermediária e cookies
+- **📱 Status de Mensagens**: Atualização automática para "delivered"
+- **🗑️ Desinstalação Automática**: Via webhook GHL
+- **🧹 Validação Robusta**: InstanceName obrigatório e validações de segurança
 
 ## 🏗️ Arquitetura
 
@@ -76,7 +81,7 @@ GHL_REDIRECT_URI=http://localhost:3000/authorize
 # Configurações Evolution API
 EVOLUTION_API_URL=https://sua-evolution-api.com
 EVOLUTION_API_KEY=sua_api_key
-EVOLUTION_INSTANCE_NAME=instancia_padrao
+# EVOLUTION_INSTANCE_NAME removido - agora é capturado dinamicamente
 
 # Configurações do Servidor
 PORT=3000
@@ -95,9 +100,15 @@ npm run db:migrate
 
 1. Acesse o [GoHighLevel Developer Portal](https://marketplace.gohighlevel.com/)
 2. Crie uma nova aplicação
-3. Configure as URLs de redirecionamento
+3. Configure as URLs de redirecionamento para `/authorize-handler`
 4. Adicione os escopos necessários:
    - `conversations.write`
+   - `conversations.readonly`
+   - `conversations/message.readonly`
+   - `conversations/message.write`
+   - `contacts.readonly`
+   - `contacts.write`
+   - `locations.readonly`
    - `conversations.readonly`
    - `conversations/message.readonly`
    - `conversations/message.write`
@@ -461,7 +472,68 @@ npm run health
 npm run dev
 ```
 
-### Logs Importantes
+## 🆕 **Funcionalidades Implementadas - Resumo**
+
+### ✅ **Sistema de Autorização OAuth2**
+- **Rota `/authorize-start`**: Captura `instanceName` antes do OAuth
+- **Sistema de Cookies**: Preserva dados durante redirecionamentos
+- **Validação Obrigatória**: `instanceName` é obrigatório para instalação
+- **Integração Oficial GHL**: Usa marketplace oficial do GoHighLevel
+
+### ✅ **Gestão de InstanceName Dinâmico**
+- **Captura Personalizada**: Cada cliente pode ter sua instância Evolution
+- **Armazenamento Seguro**: Via cookies temporários (5 minutos)
+- **Fallback Inteligente**: Valor padrão se necessário
+- **Validação Robusta**: Erro claro se `instanceName` não for fornecido
+
+### ✅ **Sincronização Bidirecional**
+- **WhatsApp → GHL**: Mensagens recebidas aparecem no lado esquerdo
+- **GHL → WhatsApp**: Mensagens enviadas com status "delivered" automático
+- **Prevenção de Loops**: Sistema anti-repetição implementado
+- **Gestão Automática**: Contatos e conversas criados automaticamente
+
+### ✅ **Webhooks e Automação**
+- **Webhook GHL**: Instalação, desinstalação e mensagens
+- **Webhook Evolution**: Mensagens recebidas do WhatsApp
+- **Desinstalação Automática**: Limpeza automática do banco
+- **Status de Mensagens**: Atualização automática para "delivered"
+
+### ✅ **Segurança e Validação**
+- **Validação de LocationId**: Apenas instalações em subcontas
+- **Tratamento de Erros**: Logs detalhados e mensagens claras
+- **Middleware de Segurança**: Interceptadores para tokens e autenticação
+- **Validação de Dados**: Verificação de parâmetros obrigatórios
+
+## 🔧 **Troubleshooting e Solução de Problemas**
+
+### ❌ **Erros Comuns e Soluções**
+
+#### 1. **"instanceName é obrigatório"**
+**Problema**: Erro durante autorização
+**Solução**: 
+- Use a rota `/authorize-start?instanceName=seu_nome`
+- Não use diretamente a rota `/authorize-handler`
+
+#### 2. **"App deve ser instalado em subconta (location)"**
+**Problema**: Instalação em empresa principal
+**Solução**:
+- Desinstale o app da empresa
+- Instale diretamente na subconta desejada
+
+#### 3. **Mensagens aparecendo no lado errado**
+**Problema**: Posicionamento incorreto no GHL
+**Solução**:
+- Sistema já corrigido automaticamente
+- Mensagens recebidas aparecem à esquerda
+- Mensagens enviadas aparecem à direita
+
+#### 4. **Status de mensagem não atualiza para "delivered"**
+**Problema**: Status permanece "pending"
+**Solução**:
+- Verifique se `messageId` está sendo passado
+- Sistema atualiza automaticamente após envio via Evolution API
+
+### 📝 **Logs Importantes**
 
 O sistema gera logs detalhados para cada operação:
 
@@ -517,6 +589,59 @@ curl "http://localhost:3000/config"
 
 # Testar conectividade Evolution
 curl "http://localhost:3000/test-evolution"
+```
+
+## 🚀 **Exemplos Práticos de Uso**
+
+### **Implementação no Bubble.io**
+
+```javascript
+// 1. Botão de instalação no painel Bubble
+const instanceName = 'instancia_cliente_123';
+const authUrl = `https://seu-servidor.ngrok-free.app/authorize-start?instanceName=${instanceName}`;
+
+// 2. Abrir URL de autorização
+window.open(authUrl, '_blank');
+
+// 3. Usuário completa OAuth no GHL
+// 4. Sistema salva automaticamente o instanceName
+// 5. Integração configurada e funcionando!
+```
+
+### **Teste Manual da Integração**
+
+```bash
+# 1. Teste de autorização
+curl "http://localhost:3000/authorize-start?instanceName=teste_manual"
+
+# 2. Verificar instalações
+curl "http://localhost:3000/integration/installations"
+
+# 3. Testar envio de mensagem
+curl -X POST "http://localhost:3000/integration/send-message" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resourceId": "73NtQAAH2EvgoqRsx6qJ",
+    "contactId": "contact_id_aqui",
+    "message": "Teste de integração funcionando!",
+    "messageId": "msg_123"
+  }'
+
+# 4. Verificar status
+curl "http://localhost:3000/integration/status"
+```
+
+### **Monitoramento em Produção**
+
+```bash
+# Logs em tempo real
+npm run dev
+
+# Verificar saúde do sistema
+curl "http://localhost:3000/health"
+
+# Status das integrações
+curl "http://localhost:3000/integration/status"
 ```
 
 ## 📚 Referências da API
