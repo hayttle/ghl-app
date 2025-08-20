@@ -796,66 +796,10 @@ app.post("/webhook/evolution",
      console.log(`Tipo de mensagem: ${messageType}`);
      console.log(`Push Name: ${pushName}`);
      
-     // Se for mensagem de mídia, enviar resposta automática
-     if (isMediaMessage) {
-       console.log(`📱 Mensagem de ${messageType} detectada - enviando resposta automática...`);
-       
-       try {
-         // Usar o instanceName já identificado
-         const instanceName = req.body.instance || req.body.instanceName || req.body.data?.instanceName || req.body.source?.instanceName;
-         
-         if (!instanceName) {
-           console.error('❌ InstanceName não encontrado no webhook');
-           return res.status(400).json({ error: 'InstanceName não fornecido' });
-         }
-         
-         console.log(`🔍 Buscando instalação para instância: ${instanceName}`);
-         
-         // Buscar instalação pelo instanceName
-         const installationDetails = await ghl.model.getInstallationByInstanceName(instanceName);
-         
-         if (!installationDetails) {
-           console.error(`❌ Instalação não encontrada para instância: ${instanceName}`);
-           return res.status(404).json({ error: 'Instalação não encontrada' });
-         }
-         
-         console.log(`✅ Instalação encontrada para resposta automática:`, {
-           locationId: installationDetails.locationId,
-           instanceName: installationDetails.evolutionInstanceName
-         });
-         
-         // Enviar resposta automática
-         const responseMessage = `Não recebemos mensagem de ${messageType}, somente texto. Agradecemos a compreensão!`;
-         
-         console.log(`📤 Enviando resposta automática para ${messageType}...`);
-         
-         if (!installationDetails.locationId) {
-           console.error('❌ LocationId não encontrado na instalação');
-           return res.status(500).json({ error: 'LocationId não encontrado na instalação' });
-         }
-         
-         // Para resposta automática, usar Evolution API diretamente
-         const evolutionService = new EvolutionApiService({
-           baseUrl: baseIntegrationConfig.evolutionApiUrl,
-           apiKey: baseIntegrationConfig.evolutionApiKey,
-           instanceName: installationDetails.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
-         });
-         
-         const result = await evolutionService.sendTextMessage(
-           inboundPhoneNumber,
-           responseMessage
-         );
-         
-         if (result.success) {
-           console.log(`✅ Resposta automática enviada com sucesso para ${messageType}`);
-         } else {
-           console.error(`❌ Falha ao enviar resposta automática: ${result.error}`);
-         }
-         
-       } catch (error) {
-         console.error(`❌ Erro ao enviar resposta automática: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
-       }
-     }
+           // Se for mensagem de mídia, apenas logar o tipo (sem resposta automática)
+      if (isMediaMessage) {
+        console.log(`📱 Mensagem de ${messageType} detectada - será sincronizada no CRM como [${messageType.toUpperCase()}]`);
+      }
      
      // Identificar instância para processamento normal
      const instanceName = req.body.instance || req.body.instanceName || req.body.data?.instanceName || req.body.source?.instanceName;
