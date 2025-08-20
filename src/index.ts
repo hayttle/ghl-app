@@ -1,5 +1,6 @@
 import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
 import { GHL } from "./ghl";
 import { json } from "body-parser";
 import axios, { AxiosError } from "axios";
@@ -13,6 +14,7 @@ const path = __dirname + "/ui/dist/";
 dotenv.config();
 const app: Express = express();
 app.use(json({ type: 'application/json' }))
+app.use(cookieParser());
 
 app.use(express.static(path));
 
@@ -77,11 +79,60 @@ app.use((error: any, req: Request, res: Response, next: any) => {
   });
 });
 
+
+
+// Rota intermediária para capturar instanceName antes do OAuth
+app.get("/authorize-start", async (req: Request, res: Response) => {
+  try {
+    const { instanceName } = req.query;
+    
+    if (!instanceName) {
+      return res.status(400).json({
+        success: false,
+        message: 'InstanceName é obrigatório'
+      });
+    }
+
+    console.log(`🔐 Iniciando autorização com instanceName: ${instanceName}`);
+    
+    // Armazena o instanceName em um cookie temporário
+    res.cookie('tempInstanceName', instanceName, { 
+      maxAge: 5 * 60 * 1000, // 5 minutos
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production'
+    });
+    
+    // Redireciona para o OAuth do GHL
+    const oauthUrl = `https://marketplace.leadconnectorhq.com/oauth/chooselocation?response_type=code&redirect_uri=${encodeURIComponent(process.env.GHL_APP_REDIRECT_URI || 'https://b075774f803b.ngrok-free.app/authorize-handler')}&client_id=68a0be624cf070ff76527886-meejtbba&scope=conversations.write+conversations.readonly+conversations%2Fmessage.readonly+conversations%2Fmessage.write+contacts.readonly+contacts.write+locations.readonly`;
+    
+    console.log(`🔄 Redirecionando para OAuth GHL com instanceName: ${instanceName}`);
+    res.redirect(oauthUrl);
+    
+  } catch (error: any) {
+    console.error('Erro ao iniciar autorização:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno ao iniciar autorização',
+      error: error.message
+    });
+  }
+});
+
 app.get("/authorize-handler", async (req: Request, res: Response) => {
   try {
     const { code } = req.query;
+    console.log("🔐 Handler de autorização chamado com code:", code);
+    
     if (code) {
-      await ghl.authorizationHandler(code as string);
+      // Recupera o instanceName do cookie
+      const instanceName = req.cookies?.tempInstanceName || 'default';
+      console.log(`🔍 InstanceName recuperado do cookie: ${instanceName}`);
+      
+      // Limpa o cookie temporário
+      res.clearCookie('tempInstanceName');
+      
+      // Passa o instanceName para o handler de autorização
+      await ghl.authorizationHandler(code as string, instanceName);
       res.redirect("https://app.gohighlevel.com/");
     } else {
       res.status(400).send("Código de autorização ausente.");

@@ -11,13 +11,25 @@ export class GHL {
     this.model = new Model();
   }
 
-  async authorizationHandler(code: string) {
+
+
+  async authorizationHandler(code: string, instanceName?: string) {
     if (!code) {
       console.warn(
         "Please provide code when making call to authorization Handler"
       );
     }
-    await this.generateAccessTokenRefreshTokenPair(code);
+    
+    if (!instanceName) {
+      console.error('❌ ERRO: instanceName é obrigatório para configuração da instância Evolution!');
+      console.error('❌ Para corrigir:');
+      console.error('   1. Inclua instanceName na URL de instalação');
+      console.error('   2. Exemplo: https://marketplace.gohighlevel.com/install?appId=XXX&locationId=YYY&instanceName=ZZZ');
+      throw new Error('instanceName é obrigatório para configuração da instância Evolution');
+    }
+    
+    console.log(`🔐 Authorization handler chamado com instanceName: ${instanceName}`);
+    await this.generateAccessTokenRefreshTokenPair(code, instanceName);
   }
 
   decryptSSOData(key: string) {
@@ -105,7 +117,8 @@ export class GHL {
 
   async getLocationTokenFromCompanyToken(
     companyId: string,
-    locationId: string
+    locationId: string,
+    instanceName?: string
   ) {
     try {
       console.log('🔄 Obtendo token de localização para:', { companyId, locationId });
@@ -131,7 +144,7 @@ export class GHL {
         companyId: companyId,
         userType: 'Location',
         integrationStatus: 'active',
-        evolutionInstanceName: process.env.EVOLUTION_INSTANCE_NAME || 'default',
+        evolutionInstanceName: instanceName || 'default',
         lastSyncAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -180,7 +193,7 @@ export class GHL {
     }
   }
 
-  private async generateAccessTokenRefreshTokenPair(code: string) {
+  private async generateAccessTokenRefreshTokenPair(code: string, instanceName?: string) {
     try {
       console.log('🔄 Gerando par de tokens de acesso...');
       
@@ -227,7 +240,7 @@ export class GHL {
         companyId: tokenData.companyId || null,
         userType: userType,
         integrationStatus: 'active',
-        evolutionInstanceName: process.env.EVOLUTION_INSTANCE_NAME || 'default',
+        evolutionInstanceName: instanceName || 'default',
         lastSyncAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()

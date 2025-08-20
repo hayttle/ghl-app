@@ -114,21 +114,7 @@ npm run db:migrate
 
 ### Autenticação e Instalação
 
-#### `GET /authorize`
-Inicia o fluxo de autorização OAuth2 com GoHighLevel.
 
-**Parâmetros:**
-- `companyId` (opcional): ID da empresa
-- `locationId` (opcional): ID da localização
-
-**Resposta:**
-```json
-{
-  "success": true,
-  "message": "Redirecionando para autorização GoHighLevel",
-  "authUrl": "https://marketplace.gohighlevel.com/..."
-}
-```
 
 #### `GET /authorize/callback`
 Callback para processar a autorização OAuth2.
@@ -363,11 +349,13 @@ npm run dev
 ### 2. Autorização GoHighLevel
 
 ```bash
-# Acesse a URL de autorização
-curl "http://localhost:3000/authorize?locationId=73NtQAAH2EvgoqRsx6qJ"
+# 1. Use a rota intermediária para capturar instanceName:
+curl "http://localhost:3000/authorize-start?instanceName=backend_server"
 
-# Complete o fluxo OAuth2 no navegador
-# O sistema salvará automaticamente as credenciais
+# 2. O sistema redirecionará para o OAuth do GHL preservando o instanceName
+# 3. Complete o fluxo OAuth2 no navegador
+# 4. O sistema capturará o instanceName e salvará no banco durante a autorização
+# 5. A instância Evolution será configurada automaticamente com o nome personalizado
 ```
 
 ### 3. Configuração da Integração
@@ -403,6 +391,35 @@ curl "http://localhost:3000/integration/status"
 ```
 
 ## 🔄 Fluxo de Funcionamento
+
+### Autenticação e Instalação
+
+#### `GET /authorize-start`
+Rota intermediária para capturar `instanceName` antes do OAuth GHL.
+
+**Parâmetros:**
+- `instanceName` (obrigatório): Nome da instância Evolution API
+
+**Exemplo:**
+```bash
+GET /authorize-start?instanceName=backend_server
+```
+
+**Resposta:**
+- Redireciona para OAuth GHL preservando o `instanceName`
+- Armazena `instanceName` em cookie temporário
+
+### Instalação com InstanceName Personalizado
+
+```
+1. Painel Bubble chama: /authorize-start?instanceName=ZZZ
+2. Sistema armazena instanceName em cookie e redireciona para OAuth GHL
+3. GHL redireciona para /authorize-handler com code
+4. Sistema recupera instanceName do cookie e salva credenciais no banco
+5. Integração configurada com instância Evolution personalizada
+```
+
+**⚠️ IMPORTANTE:** O parâmetro `instanceName` é **OBRIGATÓRIO** na rota `/authorize-start`!
 
 ### Mensagem WhatsApp → GHL CRM
 
