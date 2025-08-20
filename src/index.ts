@@ -82,7 +82,7 @@ const ghl = new GHL();
 const baseIntegrationConfig: IntegrationConfig = {
   evolutionApiUrl: process.env.EVOLUTION_API_URL || 'http://localhost:8080',
   evolutionApiKey: process.env.EVOLUTION_API_KEY || '',
-  defaultInstanceName: 'ghl_integration' // Valor padrão apenas para fallback
+  defaultInstanceName: 'default' // Valor padrão apenas para fallback
 };
 
 // Serviço de integração será configurado dinamicamente por instalação
@@ -95,8 +95,8 @@ console.log('=== CONFIGURAÇÕES CARREGADAS ===');
 console.log('Variáveis de ambiente EVOLUTION:');
 console.log('  EVOLUTION_API_URL:', process.env.EVOLUTION_API_URL);
 console.log('  EVOLUTION_API_KEY:', process.env.EVOLUTION_API_KEY ? '***CONFIGURADA***' : 'NÃO CONFIGURADA');
-console.log('  EVOLUTION_INSTANCE_NAME:', process.env.EVOLUTION_INSTANCE_NAME);
 console.log('  EVOLUTION_WEBHOOK_SECRET:', process.env.EVOLUTION_WEBHOOK_SECRET ? '***CONFIGURADA***' : 'NÃO CONFIGURADA');
+console.log('  EVOLUTION_INSTANCE_NAME: DINÂMICO (por instalação)');
 console.log('');
 
 console.log('Servidor:', {
@@ -112,7 +112,7 @@ console.log('Banco de Dados:', {
 });
 console.log('Evolution API:', {
   url: baseIntegrationConfig.evolutionApiUrl,
-  instanceName: baseIntegrationConfig.defaultInstanceName,
+  instanceName: 'DINÂMICO (por instalação)',
   hasApiKey: !!baseIntegrationConfig.evolutionApiKey
 });
 console.log('GoHighLevel:', {
@@ -201,10 +201,10 @@ app.get("/authorize-handler",
   authRateLimiter, // Rate limiting para autenticação
   async (req: Request, res: Response) => {
   try {
-    const { code } = req.query;
+  const { code } = req.query;
     console.log("🔐 Handler de autorização chamado com code:", code);
     
-    if (code) {
+  if (code) {
       // Recupera o instanceName do cookie
       const instanceName = req.cookies?.tempInstanceName || 'default';
       console.log(`🔍 InstanceName recuperado do cookie: ${instanceName}`);
@@ -215,7 +215,7 @@ app.get("/authorize-handler",
       // Passa o instanceName para o handler de autorização
       await ghl.authorizationHandler(code as string, instanceName);
       res.redirect("https://app.gohighlevel.com/");
-    } else {
+  } else {
       res.status(400).send("Código de autorização ausente.");
     }
   } catch (error) {
@@ -482,8 +482,8 @@ app.post("/webhook/ghl",
   try {
     console.log("=== WEBHOOK GHL RECEBIDO ===");
     console.log("Body completo:", JSON.stringify(req.body, null, 2));
-    
-    const eventType = req.body.type;
+  
+  const eventType = req.body.type;
     const { contactId, locationId, body: message, conversationProviderId, companyId, messageId } = req.body;
 
     console.log(`📡 Tipo de evento: ${eventType}`);
@@ -495,12 +495,12 @@ app.post("/webhook/ghl",
       case 'UNINSTALL':
         console.log("🗑️ Evento UNINSTALL detectado - removendo instalação...");
         
-        if (locationId) {
+      if (locationId) {
           try {
             // Verifica se a instalação existe antes de deletar
             const exists = await ghl.checkInstallationExists(locationId);
             if (exists) {
-              await ghl.deleteInstallationInfo(locationId);
+          await ghl.deleteInstallationInfo(locationId);
               console.log(`✅ Instalação removida com sucesso para locationId: ${locationId}`);
             } else {
               console.log(`⚠️ Instalação não encontrada para locationId: ${locationId}`);
@@ -536,7 +536,7 @@ app.post("/webhook/ghl",
       case 'INSTALL':
   console.log("📦 Evento INSTALL detectado - configurando integração...");
   
-  if (locationId) {
+      if (locationId) {
     console.log(`✅ Configurando integração para locationId: ${locationId}`);
     try {
       // Busca o instanceName específico desta instalação
@@ -604,8 +604,8 @@ app.post("/webhook/ghl",
 const installationDetails = await ghl.model.getInstallationInfo(locationId);
 if (installationDetails) {
   await ghl.model.saveInstallationInfo({
-    ...installationDetails,
-    conversationProviderId: conversationProviderId
+                  ...installationDetails,
+                  conversationProviderId: conversationProviderId
   });
   console.log(`✅ ConversationProviderId atualizado: ${conversationProviderId}`);
 }
@@ -700,8 +700,8 @@ const result = await dynamicIntegrationService.sendMessageToWhatsApp(
               message: "Erro ao processar webhook",
               error: error.message
             });
-          }
-        } else {
+      }
+  } else {
           console.log("⚠️ Dados incompletos para mensagem outbound:");
           console.log(`  - conversationProviderId: ${conversationProviderId}`);
           console.log(`  - locationId: ${locationId}`);
@@ -742,11 +742,11 @@ app.post("/webhook/evolution",
   validateEvolutionWebhook, // Valida assinatura do webhook
   async (req: Request, res: Response) => {
   try {
-    console.log("Webhook da Evolution API recebido:", req.body);
+  console.log("Webhook da Evolution API recebido:", req.body);
     
-    const evolutionEvent = req.body;
+  const evolutionEvent = req.body;
     
-    if (evolutionEvent.event === "messages.upsert" && evolutionEvent.data.key.fromMe === false) {
+  if (evolutionEvent.event === "messages.upsert" && evolutionEvent.data.key.fromMe === false) {
       console.log("Evento de mensagem recebida detectado. Processando...");
       
       const messageData = evolutionEvent.data;
@@ -870,7 +870,7 @@ app.post("/send-message-evolution",
     
     if (result.success) {
       res.json(result);
-    } else {
+  } else {
       res.status(400).json(result);
     }
   } catch (error: any) {
@@ -945,10 +945,10 @@ app.get("/config", (req: Request, res: Response) => {
         hasPassword: !!process.env.DB_PASSWORD
       },
       evolutionApi: {
-        url: process.env.EVOLUTION_API_URL || 'http://localhost:8080',
-        instanceName: process.env.EVOLUTION_INSTANCE_NAME || 'ghl_integration',
-        hasApiKey: !!process.env.EVOLUTION_API_KEY
-      },
+  url: process.env.EVOLUTION_API_URL || 'http://localhost:8080',
+  instanceName: 'DINÂMICO (por instalação)',
+  hasApiKey: !!process.env.EVOLUTION_API_KEY
+},
       goHighLevel: {
         apiDomain: process.env.GHL_API_DOMAIN || 'não configurado',
         hasClientId: !!process.env.GHL_APP_CLIENT_ID,
@@ -1098,12 +1098,13 @@ app.get("/test-evolution",
     console.log('=== TESTE DE CONECTIVIDADE EVOLUTION API ===');
 console.log('Configuração:', {
   url: baseIntegrationConfig.evolutionApiUrl,
-  instanceName: baseIntegrationConfig.defaultInstanceName,
+  instanceName: 'DINÂMICO (por instalação)',
   hasApiKey: !!baseIntegrationConfig.evolutionApiKey
 });
 
 // Teste direto na API para ver o status real
 console.log('Testando status direto na API...');
+console.log('⚠️ AVISO: Teste usando instanceName padrão - em produção use instanceName específico da instalação');
 const axios = require('axios');
 const directResponse = await axios.get(
   `${baseIntegrationConfig.evolutionApiUrl}/instance/connectionState/${baseIntegrationConfig.defaultInstanceName}`,
@@ -1120,7 +1121,7 @@ const directResponse = await axios.get(
     const evolutionService = new EvolutionApiService({
   baseUrl: baseIntegrationConfig.evolutionApiUrl,
   apiKey: baseIntegrationConfig.evolutionApiKey,
-  instanceName: baseIntegrationConfig.defaultInstanceName
+  instanceName: baseIntegrationConfig.defaultInstanceName // Usa padrão apenas para teste
 });
 
     // Testa se consegue conectar
@@ -1135,13 +1136,14 @@ const directResponse = await axios.get(
   message: "Teste de conectividade com Evolution API",
   config: {
     url: baseIntegrationConfig.evolutionApiUrl,
-    instanceName: baseIntegrationConfig.defaultInstanceName,
+    instanceName: 'DINÂMICO (por instalação)',
     hasApiKey: !!baseIntegrationConfig.evolutionApiKey
   },
   directApiResponse: directResponse.data,
   directStatus: directStatus,
   serviceStatus: isConnected ? 'connected' : 'disconnected',
-  timestamp: new Date().toISOString()
+  timestamp: new Date().toISOString(),
+  note: "Teste usa instanceName padrão - em produção cada instalação tem seu próprio instanceName"
 });
   } catch (error: any) {
     console.error('Erro no teste de conectividade:', error);
@@ -1151,7 +1153,7 @@ const directResponse = await axios.get(
   error: error.message,
   config: {
     url: baseIntegrationConfig.evolutionApiUrl,
-    instanceName: baseIntegrationConfig.defaultInstanceName,
+    instanceName: 'DINÂMICO (por instalação)',
     hasApiKey: !!baseIntegrationConfig.evolutionApiKey
   },
   timestamp: new Date().toISOString()
