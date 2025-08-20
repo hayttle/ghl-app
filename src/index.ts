@@ -27,6 +27,7 @@ import {
 
 import { validateGHLWebhook, validateEvolutionWebhook } from "./webhook-validator";
 import { securityConfig, validateSecurityConfig } from "./security-config";
+import { ghlCredentialsValidator } from "./ghl-credentials-validator";
 
 const path = __dirname + "/ui/dist/";
 
@@ -226,7 +227,7 @@ app.get("/authorize-handler",
 
 // Rotas de integração (protegidas por API Key)
 app.post("/integration/setup", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const { resourceId, evolutionInstanceName } = req.body;
@@ -262,8 +263,59 @@ app.post("/integration/setup",
   }
 });
 
+app.post("/integration/send-message", 
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
+  async (req: Request, res: Response) => {
+  try {
+    const { resourceId, contactId, message, messageId } = req.body;
+    
+    console.log(`🔍 Body completo da requisição:`, JSON.stringify(req.body, null, 2));
+    console.log(`🔍 messageId extraído: ${messageId}`);
+    
+    if (!resourceId || !contactId || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Resource ID, Contact ID e Message são obrigatórios'
+      });
+    }
+
+    console.log(`📝 Enviando mensagem com messageId: ${messageId}`);
+
+    // Busca o instanceName específico desta instalação
+    const installationDetails = await ghl.model.getInstallationInfo(resourceId);
+    if (!installationDetails) {
+      return res.status(404).json({
+        success: false,
+        message: 'Instalação não encontrada'
+      });
+    }
+
+    // Configura o serviço com o instanceName específico desta instalação
+    const dynamicConfig: IntegrationConfig = {
+      ...baseIntegrationConfig,
+      defaultInstanceName: installationDetails.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+    };
+    
+    const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+    const result = await dynamicIntegrationService.sendMessageToWhatsApp(resourceId, contactId, message, messageId);
+    
+    if (result.success) {
+      res.status(200).json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error: any) {
+    console.error('Erro ao enviar mensagem:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno ao enviar mensagem',
+      error: error.message
+    });
+  }
+});
+
 app.post("/integration/sync-contacts", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const { resourceId } = req.body;
@@ -308,8 +360,8 @@ app.post("/integration/sync-contacts",
   }
 });
 
-app.post("/integration/send-message", 
-  validateApiKey, // Requer API Key válida
+app.post("/integration/setup", 
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const { resourceId, contactId, message, messageId } = req.body;
@@ -360,7 +412,7 @@ app.post("/integration/send-message",
 });
 
 app.get("/integration/status", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateInstallationExists, // Requer apenas que a instalação exista
   async (req: Request, res: Response) => {
   try {
     const result = await integrationService.checkIntegrationStatuses();
@@ -377,7 +429,7 @@ app.get("/integration/status",
 
 // Rotas de exemplo mantidas para compatibilidade
 app.get("/example-api-call", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const companyId = req.query.companyId as string;
@@ -417,7 +469,7 @@ app.get("/example-api-call",
 });
 
 app.get("/example-api-call-location", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const { companyId, locationId } = req.query;
@@ -825,7 +877,7 @@ app.post("/webhook/evolution",
 
 // Rota para envio direto de mensagem (mantida para compatibilidade)
 app.post("/send-message-evolution", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     console.log("=== INÍCIO DO ENVIO DE MENSAGEM ===");
@@ -886,7 +938,7 @@ app.post("/send-message-evolution",
 });
 
 app.post("/decrypt-sso", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const { key } = req.body || {};
@@ -962,7 +1014,7 @@ app.get("/config", (req: Request, res: Response) => {
 
 // Endpoint temporário para atualizar status de integração
 app.post("/debug/update-integration-status", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const { resourceId, status } = req.body;
@@ -993,7 +1045,7 @@ app.post("/debug/update-integration-status",
 
 // Rota para desinstalação manual do app
 app.delete("/integration/uninstall/:resourceId", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const { resourceId } = req.params;
@@ -1052,7 +1104,7 @@ app.delete("/integration/uninstall/:resourceId",
 
 // Rota para listar todas as instalações (útil para debug)
 app.get("/integration/installations", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateInstallationExists, // Requer apenas que a instalação exista
   async (req: Request, res: Response) => {
   try {
     console.log('📋 Listando todas as instalações...');
@@ -1092,7 +1144,7 @@ app.get("/integration/installations",
 
 // Teste de conectividade com Evolution API
 app.get("/test-evolution", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateInstallationExists, // Requer apenas que a instalação exista
   async (req: Request, res: Response) => {
   try {
     console.log('=== TESTE DE CONECTIVIDADE EVOLUTION API ===');
@@ -1163,7 +1215,7 @@ const directResponse = await axios.get(
 
 // Rota para testar atualização de status de mensagem (PUT)
 app.put("/integration/update-message-status/:resourceId/:messageId", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const { resourceId, messageId } = req.params;
@@ -1206,7 +1258,7 @@ app.put("/integration/update-message-status/:resourceId/:messageId",
 
 // Rota para testar atualização de status de mensagem (GET - para facilitar testes)
 app.get("/integration/update-message-status/:resourceId/:messageId", 
-  validateApiKey, // Requer API Key válida
+  ghlCredentialsValidator.validateGHLCredentials, // Requer credenciais GHL válidas
   async (req: Request, res: Response) => {
   try {
     const { resourceId, messageId } = req.params;

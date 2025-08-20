@@ -67,26 +67,29 @@ Crie um arquivo `.env` na raiz do projeto:
 
 ```env
 # Configurações do Banco de Dados
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=ghl_integration
-DB_USER=seu_usuario
-DB_PASSWORD=sua_senha
+DATABASE_URL=postgresql://usuario:senha@localhost:5432/ghl_integration
 
 # Configurações GoHighLevel
-GHL_CLIENT_ID=seu_client_id
-GHL_CLIENT_SECRET=seu_client_secret
-GHL_REDIRECT_URI=http://localhost:3000/authorize
+GHL_APP_CLIENT_ID=seu_client_id
+GHL_APP_CLIENT_SECRET=seu_client_secret
+GHL_APP_REDIRECT_URI=http://localhost:3000/authorize-handler
+GHL_API_DOMAIN=https://services.leadconnectorhq.com
 
 # Configurações Evolution API
 EVOLUTION_API_URL=https://sua-evolution-api.com
 EVOLUTION_API_KEY=sua_api_key
-# EVOLUTION_INSTANCE_NAME removido - agora é capturado dinamicamente
 
 # Configurações do Servidor
 PORT=3000
 NODE_ENV=development
 ```
+
+**⚠️ IMPORTANTE:** As seguintes variáveis de segurança **NÃO são mais necessárias**:
+- ~~`INTERNAL_API_KEY`~~ - Substituída por validação de credenciais GHL
+- ~~`GHL_WEBHOOK_SECRET`~~ - Substituída por validação de credenciais GHL
+- ~~`EVOLUTION_WEBHOOK_SECRET`~~ - Substituída por validação de credenciais GHL
+- ~~`ADMIN_API_KEY`~~ - Substituída por validação de credenciais GHL
+- ~~`READONLY_API_KEY`~~ - Substituída por validação de credenciais GHL
 
 ### 3. Configuração do Banco de Dados
 
@@ -98,10 +101,12 @@ npm run db:migrate
 
 ### 4. Configuração GoHighLevel
 
-1. Acesse o [GoHighLevel Developer Portal](https://marketplace.gohighlevel.com/)
-2. Crie uma nova aplicação
-3. Configure as URLs de redirecionamento para `/authorize-handler`
-4. Adicione os escopos necessários:
+1. **Acesse o [GoHighLevel Developer Portal](https://marketplace.leadconnectorhq.com/)**
+2. **Crie uma nova aplicação**
+3. **Configure as URLs de redirecionamento:**
+   - **Redirect URI**: `http://localhost:3000/authorize-handler`
+   - **Webhook URL**: `http://localhost:3000/webhook/ghl`
+4. **Adicione os escopos necessários:**
    - `conversations.write`
    - `conversations.readonly`
    - `conversations/message.readonly`
@@ -109,11 +114,11 @@ npm run db:migrate
    - `contacts.readonly`
    - `contacts.write`
    - `locations.readonly`
-   - `conversations.readonly`
-   - `conversations/message.readonly`
-   - `conversations/message.write`
-   - `contacts.readonly`
-   - `contacts.write`
+5. **⚠️ IMPORTANTE - Nova Segurança:**
+   - **NÃO é necessário** configurar webhook secrets
+   - **NÃO é necessário** configurar API keys
+   - O sistema agora usa **validação automática de credenciais GHL**
+   - As credenciais são capturadas automaticamente durante a instalação
 
 ### 5. Configuração Evolution API
 
@@ -495,6 +500,66 @@ npm run dev
 ### ✅ **Webhooks e Automação**
 - **Webhook GHL**: Instalação, desinstalação e mensagens
 - **Webhook Evolution**: Mensagens recebidas do WhatsApp
+
+## 🛡️ **Sistema de Segurança Simplificado**
+
+### **🔐 Nova Abordagem de Segurança**
+
+O sistema agora utiliza **validação de credenciais GHL** em vez de chaves de API complexas, tornando-o **mais simples e seguro**.
+
+#### **Como Funciona:**
+
+1. **Durante a Instalação**: O sistema captura e armazena automaticamente:
+   - `client_id` do GHL
+   - `client_secret` do GHL
+   - `location_id` da subconta
+
+2. **Durante as Requisições**: O cliente deve incluir nos headers:
+   - `X-GHL-Client-ID`: Seu client_id do GHL
+   - `X-GHL-Client-Secret`: Seu client_secret do GHL
+
+3. **Validação**: O sistema compara as credenciais recebidas com as armazenadas no banco para aquele `location_id`
+
+#### **Vantagens:**
+
+- ✅ **Simplicidade**: Sem necessidade de configurar webhook secrets
+- ✅ **Segurança**: Cada subconta tem suas próprias credenciais únicas
+- ✅ **Isolamento**: Total separação entre diferentes instalações
+- ✅ **Manutenção**: Sem necessidade de gerenciar múltiplas chaves de API
+
+#### **Exemplo de Uso:**
+
+```bash
+# Enviar mensagem via API
+curl -X POST "http://localhost:3000/integration/send-message" \
+  -H "Content-Type: application/json" \
+  -H "X-GHL-Client-ID: seu_client_id_aqui" \
+  -H "X-GHL-Client-Secret: seu_client_secret_aqui" \
+  -d '{
+    "resourceId": "73NtQAAH2EvgoqRsx6qJ",
+    "contactId": "qaFHmtsgftGT4pMQnq6R",
+    "message": "Olá! Como posso ajudar?",
+    "messageId": "msg_123"
+  }'
+```
+
+#### **Rotas Protegidas:**
+
+**🔒 Validação Completa (credenciais GHL):**
+- `POST /integration/setup`
+- `POST /integration/send-message`
+- `POST /integration/sync-contacts`
+- `DELETE /integration/uninstall/:resourceId`
+- `PUT /integration/update-message-status/:resourceId/:messageId`
+- `POST /send-message-evolution`
+- `POST /decrypt-sso`
+- `GET /example-api-call`
+- `GET /example-api-call-location`
+
+**🔓 Validação Simples (apenas instalação existe):**
+- `GET /integration/status`
+- `GET /integration/installations`
+- `GET /test-evolution`
 - **Desinstalação Automática**: Limpeza automática do banco
 - **Status de Mensagens**: Atualização automática para "delivered"
 
@@ -554,9 +619,11 @@ O sistema gera logs detalhados para cada operação:
 ### Segurança
 
 - **OAuth2**: Autenticação segura com GoHighLevel
+- **Validação de Credenciais GHL**: Sistema automático de validação por subconta
 - **Tokens**: Refresh automático de tokens expirados
 - **Validação**: Verificação de parâmetros e permissões
 - **Logs**: Auditoria completa de todas as operações
+- **Isolamento**: Cada subconta tem suas próprias credenciais únicas
 
 ## 🔧 Troubleshooting
 
@@ -591,6 +658,32 @@ curl "http://localhost:3000/config"
 curl "http://localhost:3000/test-evolution"
 ```
 
+## 🔄 **Migração do Sistema Antigo**
+
+### **Para Usuários Existentes:**
+
+Se você já estava usando o sistema anterior com `INTERNAL_API_KEY`, `GHL_WEBHOOK_SECRET`, etc., **não é necessário fazer nada**:
+
+1. **O sistema continua funcionando** normalmente
+2. **As novas validações** são aplicadas automaticamente
+3. **Suas instalações existentes** continuam ativas
+4. **Os novos campos** (`client_id`, `client_secret`) são preenchidos automaticamente
+
+### **O que Mudou:**
+
+- ✅ **Segurança mais simples**: Sem necessidade de configurar webhook secrets
+- ✅ **Validação automática**: Credenciais GHL são capturadas durante instalação
+- ✅ **Isolamento total**: Cada subconta tem suas próprias credenciais
+- ✅ **Manutenção reduzida**: Menos variáveis de ambiente para gerenciar
+
+### **Para Novas Instalações:**
+
+- **NÃO é necessário** configurar webhook secrets no marketplace GHL
+- **NÃO é necessário** configurar `INTERNAL_API_KEY` no `.env`
+- **O sistema captura automaticamente** as credenciais necessárias
+
+---
+
 ## 🚀 **Exemplos Práticos de Uso**
 
 ### **Implementação no Bubble.io**
@@ -620,6 +713,8 @@ curl "http://localhost:3000/integration/installations"
 # 3. Testar envio de mensagem
 curl -X POST "http://localhost:3000/integration/send-message" \
   -H "Content-Type: application/json" \
+  -H "X-GHL-Client-ID: seu_client_id_aqui" \
+  -H "X-GHL-Client-Secret: seu_client_secret_aqui" \
   -d '{
     "resourceId": "73NtQAAH2EvgoqRsx6qJ",
     "contactId": "contact_id_aqui",

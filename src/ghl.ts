@@ -241,6 +241,8 @@ export class GHL {
         userType: userType,
         integrationStatus: 'active',
         evolutionInstanceName: instanceName || 'default',
+        clientId: process.env.GHL_APP_CLIENT_ID,
+        clientSecret: process.env.GHL_APP_CLIENT_SECRET,
         lastSyncAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()

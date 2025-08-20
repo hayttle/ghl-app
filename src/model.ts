@@ -33,6 +33,8 @@ export interface InstallationDetails {
   lastSyncAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
+  clientId?: string;
+  clientSecret?: string;
 }
 
 export interface ContactInfo {
@@ -84,10 +86,12 @@ export class Model {
         evolution_instance_name,
         integration_status,
         last_sync_at,
+        client_id,
+        client_secret,
         created_at,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
       ON CONFLICT (location_id) DO UPDATE SET
         access_token = EXCLUDED.access_token,
         refresh_token = EXCLUDED.refresh_token,
@@ -99,6 +103,8 @@ export class Model {
         evolution_instance_name = EXCLUDED.evolution_instance_name,
         integration_status = EXCLUDED.integration_status,
         last_sync_at = EXCLUDED.last_sync_at,
+        client_id = EXCLUDED.client_id,
+        client_secret = EXCLUDED.client_secret,
         updated_at = NOW();
     `;
 
@@ -114,7 +120,9 @@ export class Model {
       details.conversationProviderId || null,
       details.evolutionInstanceName || null,
       details.integrationStatus || IntegrationStatus.Active,
-      details.lastSyncAt || new Date()
+      details.lastSyncAt || new Date(),
+      details.clientId || null,
+      details.clientSecret || null
     ];
 
     try {
@@ -154,7 +162,9 @@ export class Model {
         integrationStatus: row.integration_status,
         lastSyncAt: row.last_sync_at,
         createdAt: row.created_at,
-        updatedAt: row.updated_at
+        updatedAt: row.updated_at,
+        clientId: row.client_id,
+        clientSecret: row.client_secret
       };
     } catch (error) {
       console.error('Erro ao buscar detalhes da instalação no DB:', error);
