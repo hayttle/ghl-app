@@ -21,28 +21,7 @@ export const securityConfig = {
     maxAge: 86400 // 24 horas
   },
   
-  // Webhooks
-  webhooks: {
-    ghl: {
-      secret: process.env.GHL_WEBHOOK_SECRET || '',
-      signatureHeader: 'x-ghl-signature',
-      allowedIPs: process.env.GHL_ALLOWED_IPS?.split(',') || [],
-      maxAgeMinutes: 5
-    },
-    evolution: {
-      secret: process.env.EVOLUTION_WEBHOOK_SECRET || '',
-      signatureHeader: 'x-evolution-signature',
-      allowedIPs: process.env.EVOLUTION_ALLOWED_IPS?.split(',') || [],
-      maxAgeMinutes: 5
-    }
-  },
-  
-  // API Keys
-  apiKeys: {
-    internal: process.env.INTERNAL_API_KEY || '',
-    admin: process.env.ADMIN_API_KEY || '',
-    readonly: process.env.READONLY_API_KEY || ''
-  },
+
   
   // Headers de Segurança
   securityHeaders: {

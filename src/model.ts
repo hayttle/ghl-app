@@ -313,4 +313,39 @@ export class Model {
       return [];
     }
   }
+
+  async getInstallationByInstanceName(instanceName: string): Promise<InstallationDetails | null> {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM installations WHERE evolution_instance_name = $1 LIMIT 1',
+        [instanceName]
+      );
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      const row = result.rows[0];
+      return {
+        id: row.id,
+        access_token: row.access_token,
+        token_type: row.token_type,
+        expires_in: row.expires_in,
+        refresh_token: row.refresh_token,
+        scope: row.scope,
+        userType: row.user_type,
+        companyId: row.company_id,
+        locationId: row.location_id,
+        conversationProviderId: row.conversation_provider_id,
+        evolutionInstanceName: row.evolution_instance_name,
+        integrationStatus: row.integration_status,
+        lastSyncAt: row.last_sync_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    } catch (error) {
+      console.error('Erro ao buscar instalação por instanceName:', error);
+      return null;
+    }
+  }
 }

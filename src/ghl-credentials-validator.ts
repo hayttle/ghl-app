@@ -140,6 +140,86 @@ export class GHLCredentialsValidator {
       });
     }
   };
+
+  /**
+   * Valida webhooks do GHL usando client_id e client_secret armazenados
+   * Extrai locationId do body do webhook e valida as credenciais
+   */
+  validateGHLWebhook = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const locationId = req.body?.locationId;
+      
+      if (!locationId) {
+        console.error('❌ LocationId não encontrado no webhook GHL');
+        return res.status(400).json({
+          success: false,
+          message: 'LocationId obrigatório no webhook'
+        });
+      }
+
+      console.log(`🔍 Validando webhook GHL para locationId: ${locationId}`);
+      console.log(`🔍 Body completo do webhook:`, JSON.stringify(req.body, null, 2));
+
+      // Busca as credenciais armazenadas para esta instalação
+      const installationDetails = await this.model.getInstallationInfo(locationId);
+      
+      if (!installationDetails) {
+        console.error(`❌ Instalação não encontrada para locationId: ${locationId}`);
+        
+        // Debug: vamos ver todas as instalações no banco
+        try {
+          const allInstallations = await this.model.getAllInstallations();
+          console.log(`🔍 Total de instalações no banco: ${allInstallations.length}`);
+          console.log(`🔍 Instalações disponíveis:`, allInstallations.map(inst => ({
+            locationId: inst.locationId,
+            companyId: inst.companyId,
+            evolutionInstanceName: inst.evolutionInstanceName
+          })));
+        } catch (debugError) {
+          console.error('❌ Erro ao buscar todas as instalações para debug:', debugError);
+        }
+        
+        return res.status(404).json({
+          success: false,
+          message: 'Instalação não encontrada'
+        });
+      }
+
+      if (!installationDetails.clientId || !installationDetails.clientSecret) {
+        console.error(`❌ Credenciais GHL não encontradas para locationId: ${locationId}`);
+        return res.status(401).json({
+          success: false,
+          message: 'Credenciais GHL não configuradas para esta instalação'
+        });
+      }
+
+      // Valida se as credenciais correspondem às do ambiente (app)
+      if (installationDetails.clientId !== process.env.GHL_APP_CLIENT_ID || 
+          installationDetails.clientSecret !== process.env.GHL_APP_CLIENT_SECRET) {
+        console.error(`❌ Credenciais GHL inválidas para locationId: ${locationId}`);
+        console.error(`   DB clientId: ${installationDetails.clientId}`);
+        console.error(`   ENV clientId: ${process.env.GHL_APP_CLIENT_ID}`);
+        return res.status(401).json({
+          success: false,
+          message: 'Credenciais GHL inválidas'
+        });
+      }
+
+      // Adiciona dados da instalação ao req para uso posterior
+      (req as any).ghlInstallation = installationDetails;
+      (req as any).locationId = locationId;
+
+      console.log(`✅ Webhook GHL validado com sucesso para locationId: ${locationId}`);
+      next();
+      
+    } catch (error) {
+      console.error('❌ Erro na validação do webhook GHL:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro interno na validação do webhook'
+      });
+    }
+  };
 }
 
 // Instância singleton

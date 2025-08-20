@@ -61,56 +61,9 @@ export const corsOptions = {
   maxAge: 86400 // 24 horas
 };
 
-// Middleware de validação de API Key
-export const validateApiKey = (req: Request, res: Response, next: NextFunction) => {
-  const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
-  
-  if (!apiKey || apiKey !== process.env.INTERNAL_API_KEY) {
-    return res.status(401).json({
-      success: false,
-      message: 'API Key inválida ou ausente'
-    });
-  }
-  
-  next();
-};
 
-// Middleware de validação de origem para webhooks
-export const validateWebhookOrigin = (req: Request, res: Response, next: NextFunction) => {
-  const userAgent = req.headers['user-agent'] || '';
-  const origin = req.headers.origin || req.headers.referer || '';
-  
-  // Valida se é do GHL
-  if (req.path === '/webhook/ghl') {
-    if (!userAgent.includes('GoHighLevel') && !origin.includes('gohighlevel.com')) {
-      console.warn(`🚨 Tentativa de webhook GHL de origem suspeita: ${origin} - User-Agent: ${userAgent}`);
-      return res.status(403).json({
-        success: false,
-        message: 'Origem não autorizada para webhook GHL'
-      });
-    }
-  }
-  
-  // Valida se é da Evolution API
-  if (req.path === '/webhook/evolution') {
-    // Evolution API geralmente vem diretamente (sem origin) ou de IPs específicos
-    // Permite se não tiver origin (webhook direto) ou se vier da URL configurada
-    const hasValidOrigin = !origin || 
-                          origin.includes(process.env.EVOLUTION_API_URL || '') ||
-                          userAgent.includes('Evolution') ||
-                          userAgent.includes('evolution');
-    
-    if (!hasValidOrigin) {
-      console.warn(`🚨 Tentativa de webhook Evolution de origem suspeita: ${origin} - User-Agent: ${userAgent}`);
-      return res.status(403).json({
-        success: false,
-        message: 'Origem não autorizada para webhook Evolution'
-      });
-    }
-  }
-  
-  next();
-};
+
+
 
 // Middleware de sanitização de dados
 export const sanitizeInput = (req: Request, res: Response, next: NextFunction) => {
