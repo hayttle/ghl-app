@@ -43,6 +43,14 @@ if (securityWarnings.length > 0) {
 const app: Express = express();
 
 // ========================================
+// CONFIGURAÇÃO DE PROXY (apenas em desenvolvimento)
+// ========================================
+if (process.env.NODE_ENV === 'development') {
+  app.set('trust proxy', true); // Confia em proxies (ngrok) apenas em desenvolvimento
+  console.log('🔧 Modo desenvolvimento: proxy confiável ativado para ngrok');
+}
+
+// ========================================
 // MIDDLEWARE DE SEGURANÇA
 // ========================================
 
