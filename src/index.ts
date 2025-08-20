@@ -801,79 +801,53 @@ app.post("/webhook/evolution",
        console.log(`📱 Mensagem de ${messageType} detectada - enviando resposta automática...`);
        
        try {
-         // Buscar instalação específica para obter instanceName
+         // Usar o instanceName já identificado
          const instanceName = req.body.instance || req.body.instanceName || req.body.data?.instanceName || req.body.source?.instanceName;
          
          if (!instanceName) {
-           console.error("❌ NÃO É POSSÍVEL IDENTIFICAR A INSTÂNCIA para resposta automática");
-           return res.status(400).json({
-             success: false,
-             message: "Não é possível identificar a instância para resposta automática"
-           });
+           console.error('❌ InstanceName não encontrado no webhook');
+           return res.status(400).json({ error: 'InstanceName não fornecido' });
          }
          
-         // Buscar instalação específica
-         const targetInstallation = await ghl.model.getInstallationByInstanceName(instanceName);
+         console.log(`🔍 Buscando instalação para instância: ${instanceName}`);
          
-         if (!targetInstallation) {
-           console.error(`❌ Instalação não encontrada para a instância: ${instanceName}`);
-           return res.status(404).json({
-             success: false,
-             message: `Instalação não encontrada para a instância: ${instanceName}`
-           });
+         // Buscar instalação pelo instanceName
+         const installationDetails = await ghl.model.getInstallationByInstanceName(instanceName);
+         
+         if (!installationDetails) {
+           console.error(`❌ Instalação não encontrada para instância: ${instanceName}`);
+           return res.status(404).json({ error: 'Instalação não encontrada' });
          }
          
-         const resourceId = targetInstallation.locationId || targetInstallation.companyId;
+         console.log(`✅ Instalação encontrada para resposta automática:`, {
+           locationId: installationDetails.locationId,
+           instanceName: installationDetails.evolutionInstanceName
+         });
          
-         if (!resourceId) {
-           console.error("❌ ResourceId não encontrado na instalação");
-           return res.status(500).json({
-             success: false,
-             message: "ResourceId não encontrado na instalação"
-           });
+         // Enviar resposta automática
+         const responseMessage = `Não recebemos mensagem de ${messageType}, somente texto. Agradecemos a compreensão!`;
+         
+         console.log(`📤 Enviando resposta automática para ${messageType}...`);
+         
+         if (!installationDetails.locationId) {
+           console.error('❌ LocationId não encontrado na instalação');
+           return res.status(500).json({ error: 'LocationId não encontrado na instalação' });
          }
          
-         // Configurar serviço para a instância específica
-         const dynamicConfig: IntegrationConfig = {
-           ...baseIntegrationConfig,
-           defaultInstanceName: targetInstallation.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
-         };
-         
-         const dynamicIntegrationService = new IntegrationService(dynamicConfig);
-         
-         // Mensagem de resposta automática
-         const autoResponseMessage = `Não recebemos mensagem de ${messageType}, somente texto. Agradecemos a compreensão!`;
-         
-         // Enviar resposta automática via Evolution API
-         const autoResponseResult = await dynamicIntegrationService.sendMessageToWhatsApp(
+         const result = await integrationService.sendMessageToWhatsApp(
+           installationDetails.locationId,
            inboundPhoneNumber,
-           autoResponseMessage,
-           resourceId
+           responseMessage
          );
          
-         if (autoResponseResult.success) {
-           console.log(`✅ Resposta automática enviada com sucesso para mensagem de ${messageType}`);
-           
-           // Retornar sucesso sem processar a mensagem de mídia no GHL
-           return res.status(200).json({
-             success: true,
-             message: `Resposta automática enviada para mensagem de ${messageType}`,
-             data: {
-               instanceName,
-               resourceId,
-               phoneNumber: inboundPhoneNumber,
-               messageType,
-               autoResponse: autoResponseMessage
-             }
-           });
+         if (result.success) {
+           console.log(`✅ Resposta automática enviada com sucesso para ${messageType}`);
          } else {
-           console.error(`❌ Falha ao enviar resposta automática:`, autoResponseResult.error);
-           // Continuar com o processamento normal mesmo se a resposta automática falhar
+           console.error(`❌ Falha ao enviar resposta automática: ${result.error}`);
          }
          
-       } catch (error: any) {
-         console.error(`❌ Erro ao enviar resposta automática para ${messageType}:`, error.message);
-         // Continuar com o processamento normal mesmo se a resposta automática falhar
+       } catch (error) {
+         console.error(`❌ Erro ao enviar resposta automática: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
        }
      }
      
