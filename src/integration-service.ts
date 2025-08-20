@@ -181,13 +181,15 @@ export class IntegrationService {
   async sendMessageToWhatsApp(
     resourceId: string,
     contactId: string,
-    message: string
+    message: string,
+    messageId?: string
   ): Promise<SyncResult> {
     try {
       console.log(`=== INÍCIO DO ENVIO DE MENSAGEM WHATSAPP ===`);
       console.log(`Enviando mensagem para WhatsApp via recurso: ${resourceId}`);
       console.log(`Contact ID: ${contactId}`);
       console.log(`Mensagem: ${message}`);
+      console.log(`Message ID recebido: ${messageId}`);
       
       // Busca informações da instalação
       console.log(`Buscando informações da instalação para: ${resourceId}`);
@@ -246,6 +248,30 @@ export class IntegrationService {
       console.log(`Resultado do envio Evolution API:`, sendResult);
 
       if (sendResult.success) {
+        // Atualiza status da mensagem para "delivered" no GHL se messageId foi fornecido
+        if (messageId) {
+          try {
+            console.log(`🔄 Atualizando status da mensagem ${messageId} para "delivered" no GHL...`);
+            
+            const statusUpdateResponse = await this.ghl.requests(resourceId).put(
+              `/conversations/messages/${messageId}/status`,
+              { status: "delivered" },
+              {
+                headers: {
+                  Version: "2021-04-15"
+                }
+              }
+            );
+            
+            console.log(`✅ Status da mensagem atualizado para "delivered":`, statusUpdateResponse.data);
+          } catch (statusError: any) {
+            console.error("❌ Erro ao atualizar status da mensagem:", statusError.response?.data || statusError.message);
+            // Não falha o envio por erro de atualização de status
+          }
+        } else {
+          console.log("⚠️ MessageId não fornecido - não é possível atualizar status automaticamente");
+        }
+
         // Atualiza tempo de última sincronização
         await this.model.updateLastSyncTime(resourceId);
         

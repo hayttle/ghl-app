@@ -255,6 +255,56 @@ Lista todas as instalações ativas no sistema.
 }
 ```
 
+#### `PUT /integration/update-message-status/:resourceId/:messageId`
+
+Atualiza o status de uma mensagem específica para "delivered" no GHL.
+
+**Parâmetros:**
+- `resourceId`: ID da subconta (location) ou empresa
+- `messageId`: ID da mensagem a ser atualizada
+
+**Payload:**
+```json
+{
+  "status": "delivered"
+}
+```
+
+**Headers:**
+```
+Version: 2021-04-15
+```
+
+**Resposta de Sucesso:**
+```json
+{
+  "success": true,
+  "message": "Status da mensagem atualizado para delivered",
+  "data": {
+    "status": "delivered"
+  }
+}
+```
+
+#### `GET /integration/update-message-status/:resourceId/:messageId`
+
+**Mesma funcionalidade da rota PUT, mas via GET para facilitar testes.**
+
+**Parâmetros:**
+- `resourceId`: ID da subconta (location) ou empresa
+- `messageId`: ID da mensagem a ser atualizada
+
+**Resposta de Sucesso:**
+```json
+{
+  "success": true,
+  "message": "Status da mensagem atualizado para delivered",
+  "data": {
+    "status": "delivered"
+  }
+}
+```
+
 ### Webhooks
 
 #### `POST /webhook/ghl`
@@ -263,7 +313,7 @@ Recebe eventos do GoHighLevel (instalação, desinstalação, mensagens).
 **Eventos Suportados:**
 - `INSTALL`: Nova instalação da aplicação
 - `UNINSTALL`: Desinstalação da aplicação
-- `OutboundMessage`: Mensagem enviada do GHL
+- `OutboundMessage`: Mensagem enviada do GHL (status atualizado automaticamente para "delivered")
 
 #### `POST /webhook/evolution`
 Recebe mensagens do WhatsApp via Evolution API.
@@ -376,6 +426,7 @@ curl "http://localhost:3000/integration/status"
 4. Busca informações do contato no GHL
 5. Envia mensagem via Evolution API
 6. Mensagem é entregue no WhatsApp
+7. ✅ Status da mensagem é atualizado para "delivered" no GHL
 ```
 
 ## 📊 Monitoramento e Status
@@ -460,6 +511,7 @@ curl "http://localhost:3000/test-evolution"
   - `/contacts`: `2021-07-28`
   - `/conversations/search/`: `2021-04-15`
   - `/conversations/messages/inbound`: `2021-04-15`
+  - `/conversations/messages/{messageId}/status`: `2021-04-15`
 
 ### Evolution API
 

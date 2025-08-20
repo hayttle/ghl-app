@@ -151,7 +151,10 @@ app.post("/integration/sync-contacts", async (req: Request, res: Response) => {
 
 app.post("/integration/send-message", async (req: Request, res: Response) => {
   try {
-    const { resourceId, contactId, message } = req.body;
+    const { resourceId, contactId, message, messageId } = req.body;
+    
+    console.log(`🔍 Body completo da requisição:`, JSON.stringify(req.body, null, 2));
+    console.log(`🔍 messageId extraído: ${messageId}`);
     
     if (!resourceId || !contactId || !message) {
       return res.status(400).json({
@@ -160,7 +163,9 @@ app.post("/integration/send-message", async (req: Request, res: Response) => {
       });
     }
 
-    const result = await integrationService.sendMessageToWhatsApp(resourceId, contactId, message);
+    console.log(`📝 Enviando mensagem com messageId: ${messageId}`);
+
+    const result = await integrationService.sendMessageToWhatsApp(resourceId, contactId, message, messageId);
     
     if (result.success) {
       res.status(200).json(result);
@@ -292,11 +297,12 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
     console.log("Body completo:", JSON.stringify(req.body, null, 2));
     
     const eventType = req.body.type;
-    const { contactId, locationId, message, conversationProviderId, companyId } = req.body;
+    const { contactId, locationId, message, conversationProviderId, companyId, messageId } = req.body;
 
     console.log(`📡 Tipo de evento: ${eventType}`);
     console.log(`📍 LocationId: ${locationId}`);
     console.log(`🏢 CompanyId: ${companyId}`);
+    console.log(`🆔 MessageId: ${messageId}`);
 
     switch (eventType) {
       case 'UNINSTALL':
@@ -364,6 +370,14 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
 
       case "OutboundMessage":
         console.log("📤 Evento OutboundMessage detectado - processando mensagem...");
+        console.log("🔍 Dados completos do webhook OutboundMessage:");
+        console.log("  - Body completo:", JSON.stringify(req.body, null, 2));
+        console.log("  - messageId:", req.body.messageId);
+        console.log("  - conversationProviderId:", conversationProviderId);
+        console.log("  - locationId:", locationId);
+        console.log("  - contactId:", contactId);
+        console.log("  - message:", message);
+        console.log("  - direction:", req.body.direction);
         
         if (conversationProviderId && locationId && contactId && message) {
           try {
@@ -392,14 +406,57 @@ app.post("/webhook/ghl", async (req: Request, res: Response) => {
             }
 
             // Envia mensagem via Evolution API
+            console.log(`🔄 Enviando mensagem com messageId: ${req.body.messageId}`);
             const result = await integrationService.sendMessageToWhatsApp(
               locationId,
               contactId,
-              message
+              message,
+              req.body.messageId // Passa o messageId para atualização automática de status
             );
 
             if (result.success) {
               console.log("✅ Mensagem enviada com sucesso via Evolution API");
+              
+              // Atualiza status da mensagem para "delivered" no GHL
+              try {
+                let messageIdToUpdate = req.body.messageId;
+                
+                if (messageIdToUpdate) {
+                  console.log(`🔄 messageId encontrado no webhook: ${messageIdToUpdate}`);
+                } else {
+                  console.log("⚠️ messageId não encontrado no webhook");
+                  console.log("🔍 Tentando buscar messageId alternativo...");
+                  
+                  // Tenta buscar messageId em outros campos possíveis
+                  const possibleMessageId = req.body.id || req.body.messageId || req.body.msgId;
+                  if (possibleMessageId) {
+                    messageIdToUpdate = possibleMessageId;
+                    console.log(`🔄 messageId alternativo encontrado: ${messageIdToUpdate}`);
+                  } else {
+                    console.log("❌ Nenhum messageId encontrado - não é possível atualizar status");
+                  }
+                }
+                
+                if (messageIdToUpdate) {
+                  console.log(`🔄 Atualizando status da mensagem ${messageIdToUpdate} para "delivered"...`);
+                  
+                  const statusUpdateResponse = await ghl.requests(locationId).put(
+                    `/conversations/messages/${messageIdToUpdate}/status`,
+                    { status: "delivered" },
+                    {
+                      headers: {
+                        Version: "2021-04-15"
+                      }
+                    }
+                  );
+                  
+                  console.log(`✅ Status da mensagem atualizado para "delivered":`, statusUpdateResponse.data);
+                }
+              } catch (statusError: any) {
+                console.error("❌ Erro ao atualizar status da mensagem:", statusError.response?.data || statusError.message);
+                // Não falha o webhook por erro de atualização de status
+              }
+              
               res.status(200).json({
                 success: true,
                 message: "Webhook processado e mensagem enviada"
@@ -537,7 +594,7 @@ app.post("/send-message-evolution", async (req: Request, res: Response) => {
     console.log("=== INÍCIO DO ENVIO DE MENSAGEM ===");
     console.log("Corpo da requisição:", req.body);
     
-    const { locationId, contactId, message } = req.body;
+    const { locationId, contactId, message, messageId } = req.body;
     
     if (!locationId || !contactId || !message) {
       console.log("Parâmetros faltando:", { locationId, contactId, message });
@@ -547,14 +604,14 @@ app.post("/send-message-evolution", async (req: Request, res: Response) => {
       });
     }
 
-    console.log("Parâmetros recebidos:", { locationId, contactId, message });
+    console.log("Parâmetros recebidos:", { locationId, contactId, message, messageId });
     console.log("Configuração Evolution API:", {
       url: integrationConfig.evolutionApiUrl,
       instanceName: integrationConfig.defaultInstanceName,
       hasApiKey: !!integrationConfig.evolutionApiKey
     });
 
-    const result = await integrationService.sendMessageToWhatsApp(locationId, contactId, message);
+    const result = await integrationService.sendMessageToWhatsApp(locationId, contactId, message, messageId);
     
     console.log("Resultado do envio:", result);
     
@@ -835,6 +892,88 @@ app.get("/test-evolution", async (req: Request, res: Response) => {
         hasApiKey: !!integrationConfig.evolutionApiKey
       },
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Rota para testar atualização de status de mensagem (PUT)
+app.put("/integration/update-message-status/:resourceId/:messageId", async (req: Request, res: Response) => {
+  try {
+    const { resourceId, messageId } = req.params;
+    
+    if (!resourceId || !messageId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Resource ID e Message ID são obrigatórios'
+      });
+    }
+
+    console.log(`🔄 Testando atualização de status da mensagem ${messageId} para "delivered"...`);
+    
+    const statusUpdateResponse = await ghl.requests(resourceId).put(
+      `/conversations/messages/${messageId}/status`,
+      { status: "delivered" },
+      {
+        headers: {
+          Version: "2021-04-15"
+        }
+      }
+    );
+    
+    console.log(`✅ Status da mensagem atualizado com sucesso:`, statusUpdateResponse.data);
+    
+    res.json({
+      success: true,
+      message: "Status da mensagem atualizado para delivered",
+      data: statusUpdateResponse.data
+    });
+  } catch (error: any) {
+    console.error('Erro ao atualizar status da mensagem:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno ao atualizar status da mensagem',
+      error: error.response?.data || error.message
+    });
+  }
+});
+
+// Rota para testar atualização de status de mensagem (GET - para facilitar testes)
+app.get("/integration/update-message-status/:resourceId/:messageId", async (req: Request, res: Response) => {
+  try {
+    const { resourceId, messageId } = req.params;
+    
+    if (!resourceId || !messageId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Resource ID e Message ID são obrigatórios'
+      });
+    }
+
+    console.log(`🔄 Testando atualização de status da mensagem ${messageId} para "delivered"...`);
+    
+    const statusUpdateResponse = await ghl.requests(resourceId).put(
+      `/conversations/messages/${messageId}/status`,
+      { status: "delivered" },
+      {
+        headers: {
+          Version: "2021-04-15"
+        }
+      }
+    );
+    
+    console.log(`✅ Status da mensagem atualizado com sucesso:`, statusUpdateResponse.data);
+    
+    res.json({
+      success: true,
+      message: "Status da mensagem atualizado para delivered",
+      data: statusUpdateResponse.data
+    });
+  } catch (error: any) {
+    console.error('Erro ao atualizar status da mensagem:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno ao atualizar status da mensagem',
+      error: error.response?.data || error.message
     });
   }
 });
