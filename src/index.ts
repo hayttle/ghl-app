@@ -28,7 +28,16 @@ import { ghlCredentialsValidator } from "./ghl-credentials-validator";
 
 const path = __dirname + "/ui/dist/";
 
+// Carregar variáveis de ambiente
 dotenv.config();
+
+// ✅ NOVO: Declaração de tipo para o cache global de deduplicação
+declare global {
+  var recentProcessedMessages: { [key: string]: string } | undefined;
+}
+
+// Inicializar cache global de deduplicação
+global.recentProcessedMessages = {};
 
 // Validação de configuração de segurança
 const securityWarnings = validateSecurityConfig();
@@ -998,6 +1007,39 @@ app.post("/webhook/evolution",
         
         if (isFromMe) {
           console.log("📤 MENSAGEM FROM_ME DETECTADA - Processando como mensagem da empresa...");
+          
+          // ✅ NOVO: Verificar se já processamos esta mensagem para evitar duplicação
+          const messageKey = messageData.key.id || `${messageData.key.remoteJid}_${Date.now()}`;
+          const messageHash = `${messageData.key.remoteJid}_${messageData.message?.conversation || messageData.message?.extendedTextMessage?.text || 'media'}_${Date.now()}`;
+          
+          console.log(`🔍 Verificando duplicação - MessageKey: ${messageKey}, Hash: ${messageHash}`);
+          
+          // ✅ NOVO: Verificar se já processamos uma mensagem similar recentemente (últimos 30 segundos)
+          const recentProcessedKey = `recent_${messageHash}`;
+          if (global.recentProcessedMessages && global.recentProcessedMessages[recentProcessedKey]) {
+            console.log(`🔄 MENSAGEM DUPLICADA DETECTADA - Ignorando para evitar duplicação no GHL`);
+            console.log(`🔄 Última processada em: ${global.recentProcessedMessages[recentProcessedKey]}`);
+            return res.status(200).json({
+              success: true,
+              message: "Mensagem duplicada ignorada para evitar duplicação no GHL"
+            });
+          }
+          
+          // ✅ NOVO: Marcar esta mensagem como processada recentemente
+          if (!global.recentProcessedMessages) {
+            global.recentProcessedMessages = {};
+          }
+          global.recentProcessedMessages[recentProcessedKey] = new Date().toISOString();
+          
+          // ✅ NOVO: Limpar mensagens antigas (mais de 30 segundos)
+          setTimeout(() => {
+            if (global.recentProcessedMessages && global.recentProcessedMessages[recentProcessedKey]) {
+              delete global.recentProcessedMessages[recentProcessedKey];
+              console.log(`🧹 Mensagem antiga removida da cache de deduplicação: ${recentProcessedKey}`);
+            }
+          }, 30000); // 30 segundos
+          
+          console.log(`✅ Mensagem marcada como processada - Hash: ${recentProcessedKey}`);
           
           // Extrair dados da mensagem enviada pela empresa
           let outboundMessageText = '';
