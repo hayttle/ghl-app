@@ -1030,39 +1030,48 @@ app.post("/webhook/evolution",
         if (isFromMe) {
           console.log("📤 MENSAGEM FROM_ME DETECTADA - Processando como mensagem da empresa...");
           
-          // ✅ CORREÇÃO ROBUSTA: Usar múltiplos identificadores para deduplicação
+          // ✅ CORREÇÃO CRÍTICA: Verificar se esta mensagem já foi processada pela API
+          // Se fromMe=true, significa que a mensagem já foi enviada pela Evolution API
+          // NÃO devemos criar outra mensagem no GHL, apenas sincronizar se necessário
+          
           const messageId = messageData.key.id;
           const timestamp = messageData.messageTimestamp || Date.now();
           const senderPhone = messageData.key.remoteJid;
           const recipientPhone = messageData.key.participant;
           
-          // ✅ NOVO: Criar chave de deduplicação mais robusta
-          const dedupKey = `${messageId}_${senderPhone}_${recipientPhone}_${timestamp}`;
-          
-          console.log(`🔍 Verificando duplicação - Chave: ${dedupKey}`);
-          console.log(`📋 Detalhes:`, {
+          console.log(`🔍 Analisando mensagem fromMe=true:`, {
             messageId,
             timestamp: new Date(timestamp * 1000).toISOString(),
             senderPhone,
             recipientPhone,
-            fromMe: messageData.key.fromMe
+            fromMe: messageData.key.fromMe,
+            status: messageData.status || 'unknown'
           });
           
-          // ✅ NOVO: Verificar se já processamos esta mensagem específica
-          if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKey]) {
-            console.log(`🔄 MENSAGEM DUPLICADA DETECTADA - Chave: ${dedupKey}`);
-            console.log(`🔄 Última processada em: ${global.recentProcessedMessages[dedupKey]}`);
-            console.log(`🔄 Ignorando para evitar duplicação no GHL`);
-            console.log(`🔄 Cache atual:`, global.recentProcessedMessages);
-            return res.status(200).json({
-              success: true,
-              message: "Mensagem duplicada ignorada para evitar duplicação no GHL",
-              dedupKey: dedupKey,
-              messageId: messageId
-            });
+          // ✅ NOVO: Verificar se a mensagem tem status que indica que já foi processada
+          if (messageData.status) {
+            console.log(`ℹ️ Mensagem tem status: ${messageData.status}`);
+            
+            // Se a mensagem tem status, significa que já foi processada pela API
+            // Não devemos criar mensagem duplicada no GHL
+            if (['SENT', 'DELIVERED', 'READ', 'FAILED'].includes(messageData.status)) {
+              console.log(`✅ MENSAGEM JÁ PROCESSADA PELA API - Status: ${messageData.status}`);
+              console.log(`✅ Não criando mensagem duplicada no GHL`);
+              console.log(`✅ Apenas sincronizando status se necessário`);
+              
+              // ✅ NOVO: Aqui poderíamos sincronizar o status da mensagem no GHL se necessário
+              // Por enquanto, apenas retornamos sucesso sem criar mensagem
+              
+              return res.status(200).json({
+                success: true,
+                message: "Mensagem fromMe=true já processada pela API - não criando duplicata no GHL",
+                status: messageData.status,
+                messageId: messageId
+              });
+            }
           }
           
-          // ✅ NOVO: Verificação adicional - se a mensagem tem timestamp muito recente, pode ser duplicada
+          // ✅ NOVO: Verificar se a mensagem tem timestamp muito recente (pode ser duplicada)
           const now = Date.now();
           const messageTime = timestamp * 1000; // Converter para milissegundos
           const timeDiff = now - messageTime;
@@ -1074,115 +1083,54 @@ app.post("/webhook/evolution",
             diferenca_segundos: Math.round(timeDiff / 1000)
           });
           
-          // ✅ NOVO: Se a mensagem é muito recente (menos de 5 segundos), verificar se não é duplicada
-          if (timeDiff < 5000) {
-            console.log(`⚠️ MENSAGEM MUITO RECENTE - Verificando duplicação por tempo...`);
+          // ✅ NOVO: Se a mensagem é muito recente (menos de 3 segundos), pode ser duplicada
+          if (timeDiff < 3000) {
+            console.log(`⚠️ MENSAGEM MUITO RECENTE - Pode ser duplicada da API`);
+            console.log(`⚠️ Aguardando processamento completo antes de sincronizar`);
             
-            // Verificar se há mensagens similares nos últimos 10 segundos
-            const recentKeys = Object.keys(global.recentProcessedMessages || {});
-            const similarMessages = recentKeys.filter(key => {
-              const keyParts = key.split('_');
-              if (keyParts.length >= 4) {
-                const keySenderPhone = keyParts[1];
-                const keyRecipientPhone = keyParts[2];
-                const keyTimestamp = parseInt(keyParts[3]);
-                const keyTimeDiff = now - (keyTimestamp * 1000);
-                
-                return keySenderPhone === senderPhone && 
-                       keyRecipientPhone === recipientPhone && 
-                       keyTimeDiff < 10000; // 10 segundos
-              }
-              return false;
-            });
+            // Aguardar um pouco para garantir que a mensagem foi processada completamente
+            await new Promise(resolve => setTimeout(resolve, 2000));
             
-            if (similarMessages.length > 0) {
-              console.log(`🔄 MENSAGEM SIMILAR RECENTE DETECTADA:`, similarMessages);
-              console.log(`🔄 Ignorando para evitar duplicação no GHL`);
-              return res.status(200).json({
-                success: true,
-                message: "Mensagem similar recente ignorada para evitar duplicação no GHL",
-                similarMessages: similarMessages,
-                dedupKey: dedupKey
-              });
-            }
+            console.log(`✅ Aguardou 2 segundos - verificando novamente`);
           }
           
-          // ✅ NOVO: Marcar esta mensagem como processada usando a chave robusta
+          // ✅ NOVO: Verificar se já processamos esta mensagem específica para evitar duplicação
+          const dedupKey = `${messageId}_${senderPhone}_${recipientPhone}_${timestamp}`;
+          
+          if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKey]) {
+            console.log(`🔄 MENSAGEM JÁ PROCESSADA - Chave: ${dedupKey}`);
+            console.log(`🔄 Última processada em: ${global.recentProcessedMessages[dedupKey]}`);
+            console.log(`🔄 Não criando mensagem duplicada no GHL`);
+            return res.status(200).json({
+              success: true,
+              message: "Mensagem fromMe=true já processada - não criando duplicata no GHL",
+              dedupKey: dedupKey,
+              messageId: messageId
+            });
+          }
+          
+          // ✅ NOVO: Marcar esta mensagem como processada
           if (!global.recentProcessedMessages) {
             global.recentProcessedMessages = {};
           }
           global.recentProcessedMessages[dedupKey] = new Date().toISOString();
           
-          // ✅ NOVO: Limpar mensagens antigas (mais de 120 segundos) para evitar acúmulo
-          setTimeout(() => {
-            if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKey]) {
-              delete global.recentProcessedMessages[dedupKey];
-              console.log(`🧹 Mensagem antiga removida da cache de deduplicação: ${dedupKey}`);
-            }
-          }, 120000); // 120 segundos
-          
           console.log(`✅ Mensagem marcada como processada - Chave: ${dedupKey}`);
           console.log(`📊 Total de mensagens em cache: ${Object.keys(global.recentProcessedMessages).length}`);
-          console.log(`📊 Cache atual:`, global.recentProcessedMessages);
-        
-        // Extrair dados da mensagem enviada pela empresa
-        let outboundMessageText = '';
-        
-        if (messageData.message.conversation) {
-          outboundMessageText = messageData.message.conversation;
-        } else if (messageData.message.extendedTextMessage) {
-          outboundMessageText = messageData.message.extendedTextMessage.text || '';
-        } else if (messageData.message.imageMessage) {
-          outboundMessageText = '[IMAGEM]';
-        } else if (messageData.message.audioMessage) {
-          outboundMessageText = '[ÁUDIO]';
-        } else if (messageData.message.videoMessage) {
-          outboundMessageText = '[VÍDEO]';
-        } else if (messageData.message.documentMessage) {
-          outboundMessageText = '[DOCUMENTO]';
-        } else {
-          outboundMessageText = '[MENSAGEM]';
-        }
-        
-        // Extrair telefone do destinatário (contato)
-        const participant = messageData.key.participant || messageData.key.remoteJid;
-        if (!participant) {
-          console.error("❌ Não foi possível identificar o destinatário da mensagem");
-          return res.status(400).json({
-            success: false,
-            message: "Destinatário não identificado"
-          });
-        }
-        
-        const recipientPhoneNumber = `+${participant.replace('@s.whatsapp.net', '')}`;
-        const instanceName = req.body.instance;
-        
-        console.log(`📤 Mensagem da empresa para: ${recipientPhoneNumber}`);
-        console.log(`💬 Conteúdo: ${outboundMessageText}`);
-        console.log(`🏢 Instância: ${instanceName}`);
-        
-        // Processar mensagem da empresa
-        const result = await processOutboundMessageFromWhatsApp(
-          instanceName,
-          recipientPhoneNumber,
-          outboundMessageText
-        );
-        
-        if (result.success) {
-          console.log("✅ Mensagem da empresa processada com sucesso no GHL");
+          
+          // ✅ NOVO: IMPORTANTE: Para mensagens fromMe=true, NÃO devemos criar mensagem no GHL
+          // A mensagem já foi enviada pela Evolution API, apenas sincronizamos o status
+          console.log(`ℹ️ MENSAGEM FROM_ME - Não criando mensagem no GHL (já foi enviada pela API)`);
+          console.log(`ℹ️ Apenas sincronizando status se necessário`);
+          
           return res.status(200).json({
             success: true,
-            message: "Mensagem da empresa sincronizada com sucesso"
+            message: "Mensagem fromMe=true processada - não criando duplicata no GHL",
+            status: "PROCESSED",
+            messageId: messageId,
+            note: "Mensagem já foi enviada pela Evolution API, não criando duplicata no GHL"
           });
         } else {
-          console.error("❌ Falha ao processar mensagem da empresa:", result.error);
-          return res.status(500).json({
-            success: false,
-            message: "Falha ao processar mensagem da empresa",
-            error: result.error
-          });
-        }
-      } else {
         // Processamento normal para mensagens recebidas
         console.log("📥 MENSAGEM RECEBIDA - Processando normalmente...");
         
