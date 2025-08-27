@@ -1,0 +1,75 @@
+{
+  "name": "ghl-marketplace-app-template",
+  "version": "2.0.0",
+  "description": "A boilerplate for creating GHL marketplace apps with Evolution API integration",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "npx tsc",
+    "build-ui": "cd src/ui && npm i && npm run build && cd ../../",
+    "start": "node dist/index.js",
+    "dev": "npm run build-ui && ts-node-dev src/index.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "db:migrate": "psql -U $DB_USER -d $DB_NAME -f database-migration.sql",
+    "db:reset": "psql -U $DB_USER -d $DB_NAME -c 'DROP TABLE IF EXISTS installations CASCADE;' && npm run db:migrate",
+    "integration:setup": "curl -X POST http://localhost:3000/integration/setup -H 'Content-Type: application/json' -d '{\"resourceId\": \"test\"}'",
+    "integration:status": "curl http://localhost:3000/integration/status",
+    "health": "curl http://localhost:3000/health"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GoHighLevel/ghl-marketplace-app-template.git"
+  },
+  "keywords": [
+    "boilerplate",
+    "ghl",
+    "gohighlevel",
+    "whatsapp",
+    "evolution-api",
+    "crm",
+    "integration"
+  ],
+  "author": "GHL",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/GoHighLevel/ghl-marketplace-app-template/issues"
+  },
+  "homepage": "https://github.com/GoHighLevel/ghl-marketplace-app-template#readme",
+  "dependencies": {
+    "axios": "^1.11.0",
+    "body-parser": "^1.20.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "crypto-js": "^4.1.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.0.1",
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3",
+    "qs": "^6.11.2",
+    "vue": "^3.3.4",
+    "typescript": "^5.2.2",
+    "@types/node": "^20.8.2",
+    "@types/express": "^4.17.18",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/pg": "^8.15.5",
+    "@types/qs": "^6.9.7",
+    "@types/body-parser": "^1.19.2"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "^4.1.2",
+    "@types/jest": "^29.5.8",
+    "@typescript-eslint/eslint-plugin": "^6.13.1",
+    "@typescript-eslint/parser": "^6.13.1",
+    "eslint": "^8.55.0",
+    "jest": "^29.7.0",
+    "ts-node-dev": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
+}
