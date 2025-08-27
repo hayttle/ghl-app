@@ -976,284 +976,291 @@ app.post("/webhook/evolution",
   webhookRateLimiter, // Rate limiting específico para webhooks
   async (req: Request, res: Response) => {
     try {
-      console.log("=== WEBHOOK EVOLUTION RECEBIDO ===");
-      console.log("Payload Evolution recebido:", {
-        event: req.body.event,
-        instance: req.body.instance,
-        hasData: !!req.body.data,
-        hasMessage: !!req.body.data?.message,
-        hasKey: !!req.body.data?.key,
-        messageTypes: req.body.data?.message ? Object.keys(req.body.data.message) : [],
-        phone: req.body.data?.key?.remoteJid,
-        fromMe: req.body.data?.key?.fromMe // ✅ NOVO: Detectar fromMe
+      // ✅ NOVO: Log detalhado do webhook recebido
+      console.log("🔔 WEBHOOK EVOLUTION RECEBIDO:");
+      console.log("📋 Headers:", {
+        'content-type': req.headers['content-type'],
+        'user-agent': req.headers['user-agent'],
+        'x-forwarded-for': req.headers['x-forwarded-for'],
+        'x-real-ip': req.headers['x-real-ip']
       });
+      console.log("📋 Body completo:", JSON.stringify(req.body, null, 2));
+      console.log("📋 Timestamp recebimento:", new Date().toISOString());
+      
+      // ✅ NOVO: Verificar se é um evento de mensagem
+      if (req.body.event !== 'messages.upsert') {
+        console.log(`ℹ️ Evento ignorado: ${req.body.event}`);
+        return res.status(200).json({
+          success: true,
+          message: `Evento ${req.body.event} ignorado`
+        });
+      }
+      
+      console.log(`✅ Evento válido: ${req.body.event}`);
+      
+      // ✅ NOVO: Verificar se há dados da mensagem
+      if (!req.body.data) {
+        console.error("❌ Webhook sem dados da mensagem");
+        return res.status(400).json({
+          success: false,
+          message: "Webhook sem dados da mensagem"
+        });
+      }
+      
+      console.log("✅ Dados da mensagem encontrados");
+      
+      const messageData = req.body.data;
+        
+      // Verificar se a estrutura da mensagem está correta
+      if (!messageData || !messageData.message || !messageData.key) {
+        console.error("❌ Estrutura da mensagem inválida:", messageData);
+        return res.status(400).json({
+          success: false,
+          message: "Estrutura da mensagem inválida"
+        });
+      }
 
-      if (req.body.event === 'messages.upsert') {
-        console.log("Evento de mensagem detectado. Processando...");
+      // ✅ NOVO: Detectar se é mensagem enviada pela empresa (fromMe=true)
+      const isFromMe = messageData.key.fromMe === true;
+      
+      if (isFromMe) {
+        console.log("📤 MENSAGEM FROM_ME DETECTADA - Processando como mensagem da empresa...");
         
-        const messageData = req.body.data;
-        
-        // Verificar se a estrutura da mensagem está correta
-        if (!messageData || !messageData.message || !messageData.key) {
-          console.error("❌ Estrutura da mensagem inválida:", messageData);
+        // ✅ CORREÇÃO: Usar ID único da mensagem da Evolution API para deduplicação
+        const messageId = messageData.key.id;
+        if (!messageId) {
+          console.error("❌ MENSAGEM SEM ID ÚNICO - Não é possível deduplicar");
           return res.status(400).json({
             success: false,
-            message: "Estrutura da mensagem inválida"
+            message: "Mensagem sem ID único para deduplicação"
           });
         }
-
-        // ✅ NOVO: Detectar se é mensagem enviada pela empresa (fromMe=true)
-        const isFromMe = messageData.key.fromMe === true;
         
-        if (isFromMe) {
-          console.log("📤 MENSAGEM FROM_ME DETECTADA - Processando como mensagem da empresa...");
-          
-          // ✅ NOVO: Verificar se já processamos esta mensagem para evitar duplicação
-          const messageKey = messageData.key.id || `${messageData.key.remoteJid}_${Date.now()}`;
-          const messageHash = `${messageData.key.remoteJid}_${messageData.message?.conversation || messageData.message?.extendedTextMessage?.text || 'media'}_${Date.now()}`;
-          
-          console.log(`🔍 Verificando duplicação - MessageKey: ${messageKey}, Hash: ${messageHash}`);
-          
-          // ✅ NOVO: Verificar se já processamos uma mensagem similar recentemente (últimos 30 segundos)
-          const recentProcessedKey = `recent_${messageHash}`;
-          if (global.recentProcessedMessages && global.recentProcessedMessages[recentProcessedKey]) {
-            console.log(`🔄 MENSAGEM DUPLICADA DETECTADA - Ignorando para evitar duplicação no GHL`);
-            console.log(`🔄 Última processada em: ${global.recentProcessedMessages[recentProcessedKey]}`);
-            return res.status(200).json({
-              success: true,
-              message: "Mensagem duplicada ignorada para evitar duplicação no GHL"
-            });
+        console.log(`🔍 Verificando duplicação - MessageID: ${messageId}`);
+        
+        // ✅ CORREÇÃO: Verificar se já processamos esta mensagem específica
+        if (global.recentProcessedMessages && global.recentProcessedMessages[messageId]) {
+          console.log(`🔄 MENSAGEM DUPLICADA DETECTADA - ID: ${messageId}`);
+          console.log(`🔄 Última processada em: ${global.recentProcessedMessages[messageId]}`);
+          console.log(`🔄 Ignorando para evitar duplicação no GHL`);
+          return res.status(200).json({
+            success: true,
+            message: "Mensagem duplicada ignorada para evitar duplicação no GHL",
+            messageId: messageId
+          });
+        }
+        
+        // ✅ CORREÇÃO: Marcar esta mensagem como processada usando o ID único
+        if (!global.recentProcessedMessages) {
+          global.recentProcessedMessages = {};
+        }
+        global.recentProcessedMessages[messageId] = new Date().toISOString();
+        
+        // ✅ CORREÇÃO: Limpar mensagens antigas (mais de 60 segundos) para evitar acúmulo
+        setTimeout(() => {
+          if (global.recentProcessedMessages && global.recentProcessedMessages[messageId]) {
+            delete global.recentProcessedMessages[messageId];
+            console.log(`🧹 Mensagem antiga removida da cache de deduplicação: ${messageId}`);
           }
+        }, 60000); // 60 segundos
+        
+        console.log(`✅ Mensagem marcada como processada - ID: ${messageId}`);
+        console.log(`📊 Total de mensagens em cache: ${Object.keys(global.recentProcessedMessages).length}`);
+        
+        // Extrair dados da mensagem enviada pela empresa
+        let outboundMessageText = '';
+        
+        if (messageData.message.conversation) {
+          outboundMessageText = messageData.message.conversation;
+        } else if (messageData.message.extendedTextMessage) {
+          outboundMessageText = messageData.message.extendedTextMessage.text || '';
+        } else if (messageData.message.imageMessage) {
+          outboundMessageText = '[IMAGEM]';
+        } else if (messageData.message.audioMessage) {
+          outboundMessageText = '[ÁUDIO]';
+        } else if (messageData.message.videoMessage) {
+          outboundMessageText = '[VÍDEO]';
+        } else if (messageData.message.documentMessage) {
+          outboundMessageText = '[DOCUMENTO]';
+        } else {
+          outboundMessageText = '[MENSAGEM]';
+        }
+        
+        // Extrair telefone do destinatário (contato)
+        const participant = messageData.key.participant || messageData.key.remoteJid;
+        if (!participant) {
+          console.error("❌ Não foi possível identificar o destinatário da mensagem");
+          return res.status(400).json({
+            success: false,
+            message: "Destinatário não identificado"
+          });
+        }
+        
+        const recipientPhoneNumber = `+${participant.replace('@s.whatsapp.net', '')}`;
+        const instanceName = req.body.instance;
+        
+        console.log(`📤 Mensagem da empresa para: ${recipientPhoneNumber}`);
+        console.log(`💬 Conteúdo: ${outboundMessageText}`);
+        console.log(`🏢 Instância: ${instanceName}`);
+        
+        // Processar mensagem da empresa
+        const result = await processOutboundMessageFromWhatsApp(
+          instanceName,
+          recipientPhoneNumber,
+          outboundMessageText
+        );
+        
+        if (result.success) {
+          console.log("✅ Mensagem da empresa processada com sucesso no GHL");
+          return res.status(200).json({
+            success: true,
+            message: "Mensagem da empresa sincronizada com sucesso"
+          });
+        } else {
+          console.error("❌ Falha ao processar mensagem da empresa:", result.error);
+          return res.status(500).json({
+            success: false,
+            message: "Falha ao processar mensagem da empresa",
+            error: result.error
+          });
+        }
+      } else {
+        // Processamento normal para mensagens recebidas
+        console.log("📥 MENSAGEM RECEBIDA - Processando normalmente...");
+        
+        // Extrair texto da mensagem de forma segura
+        let inboundMessageText = '';
+        let messageType = '';
+        let isMediaMessage = false;
+       
+        if (messageData.message.conversation) {
+          inboundMessageText = messageData.message.conversation;
+          messageType = 'texto';
+        } else if (messageData.message.extendedTextMessage) {
+          inboundMessageText = messageData.message.extendedTextMessage.text || '';
+          messageType = 'texto';
+        } else if (messageData.message.imageMessage) {
+          inboundMessageText = '[IMAGEM]';
+          messageType = 'imagem';
+          isMediaMessage = true;
+        } else if (messageData.message.audioMessage) {
+          inboundMessageText = '[ÁUDIO]';
+          messageType = 'áudio';
+          isMediaMessage = true;
+        } else if (messageData.message.videoMessage) {
+          inboundMessageText = '[VÍDEO]';
+          messageType = 'vídeo';
+          isMediaMessage = true;
+        } else if (messageData.message.documentMessage) {
+          inboundMessageText = '[DOCUMENTO]';
+          messageType = 'documento';
+          isMediaMessage = true;
+        } else {
+          inboundMessageText = '[MENSAGEM]';
+          messageType = 'desconhecido';
+        }
+        
+        console.log(`📥 Mensagem recebida: ${messageType} - ${inboundMessageText}`);
+        
+        // Extrair telefone do remetente
+        const senderPhoneNumber = messageData.key.remoteJid;
+        if (!senderPhoneNumber) {
+          console.error("❌ Não foi possível identificar o remetente da mensagem");
+          return res.status(400).json({
+            success: false,
+            message: "Remetente não identificado"
+          });
+        }
+        
+        const inboundPhoneNumber = `+${senderPhoneNumber.replace('@s.whatsapp.net', '')}`;
+        const instanceName = req.body.instance;
+        const pushName = messageData.pushName || 'Contato WhatsApp';
+        
+        console.log(`📥 Mensagem de: ${inboundPhoneNumber} (${pushName})`);
+        console.log(`💬 Conteúdo: ${inboundMessageText}`);
+        console.log(`🏢 Instância: ${instanceName}`);
+        
+        // Buscar instalação específica
+        try {
+          const targetInstallation = await ghl.model.getInstallationByInstanceName(instanceName);
           
-          // ✅ NOVO: Marcar esta mensagem como processada recentemente
-          if (!global.recentProcessedMessages) {
-            global.recentProcessedMessages = {};
-          }
-          global.recentProcessedMessages[recentProcessedKey] = new Date().toISOString();
-          
-          // ✅ NOVO: Limpar mensagens antigas (mais de 30 segundos)
-          setTimeout(() => {
-            if (global.recentProcessedMessages && global.recentProcessedMessages[recentProcessedKey]) {
-              delete global.recentProcessedMessages[recentProcessedKey];
-              console.log(`🧹 Mensagem antiga removida da cache de deduplicação: ${recentProcessedKey}`);
-            }
-          }, 30000); // 30 segundos
-          
-          console.log(`✅ Mensagem marcada como processada - Hash: ${recentProcessedKey}`);
-          
-          // Extrair dados da mensagem enviada pela empresa
-          let outboundMessageText = '';
-          
-          if (messageData.message.conversation) {
-            outboundMessageText = messageData.message.conversation;
-          } else if (messageData.message.extendedTextMessage) {
-            outboundMessageText = messageData.message.extendedTextMessage.text || '';
-          } else if (messageData.message.imageMessage) {
-            outboundMessageText = '[IMAGEM]';
-          } else if (messageData.message.audioMessage) {
-            outboundMessageText = '[ÁUDIO]';
-          } else if (messageData.message.videoMessage) {
-            outboundMessageText = '[VÍDEO]';
-          } else if (messageData.message.documentMessage) {
-            outboundMessageText = '[DOCUMENTO]';
-          } else {
-            outboundMessageText = '[MENSAGEM]';
-          }
-          
-          // Extrair telefone do destinatário (contato)
-          const participant = messageData.key.participant || messageData.key.remoteJid;
-          if (!participant) {
-            console.error("❌ Não foi possível identificar o destinatário da mensagem");
-            return res.status(400).json({
+          if (!targetInstallation) {
+            console.error(`❌ Instalação não encontrada para a instância: ${instanceName}`);
+            return res.status(404).json({
               success: false,
-              message: "Destinatário não identificado"
+              message: `Instalação não encontrada para a instância: ${instanceName}`
             });
           }
           
-          const recipientPhoneNumber = `+${participant.replace('@s.whatsapp.net', '')}`;
-          const instanceName = req.body.instance;
+          console.log(`✅ Instalação encontrada para instância ${instanceName}:`, {
+            locationId: targetInstallation.locationId,
+            companyId: targetInstallation.companyId,
+            evolutionInstanceName: targetInstallation.evolutionInstanceName
+          });
           
-          console.log(`📤 Mensagem da empresa para: ${recipientPhoneNumber}`);
-          console.log(`💬 Conteúdo: ${outboundMessageText}`);
-          console.log(`🏢 Instância: ${instanceName}`);
+          const resourceId = targetInstallation.locationId || targetInstallation.companyId;
           
-          // Processar mensagem da empresa
-          const result = await processOutboundMessageFromWhatsApp(
-            instanceName,
-            recipientPhoneNumber,
-            outboundMessageText
+          if (!resourceId) {
+            console.error("❌ ResourceId não encontrado na instalação");
+            return res.status(500).json({
+              success: false,
+              message: "ResourceId não encontrado na instalação"
+            });
+          }
+          
+          const dynamicConfig: IntegrationConfig = {
+            ...baseIntegrationConfig,
+            defaultInstanceName: targetInstallation.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
+          };
+          
+          const dynamicIntegrationService = new IntegrationService(dynamicConfig);
+          const result = await dynamicIntegrationService.processIncomingMessage(
+            inboundPhoneNumber,
+            inboundMessageText,
+            resourceId,
+            pushName
           );
           
           if (result.success) {
-            console.log("✅ Mensagem da empresa processada com sucesso no GHL");
+            console.log(`✅ Mensagem processada com sucesso para a instância correta: ${instanceName} -> ${resourceId}`);
             return res.status(200).json({
               success: true,
-              message: "Mensagem da empresa sincronizada com sucesso"
+              message: "Mensagem processada e sincronizada com GHL para a subconta correta",
+              data: {
+                instanceName,
+                resourceId,
+                phoneNumber: inboundPhoneNumber,
+                message: inboundMessageText
+              }
             });
           } else {
-            console.error("❌ Falha ao processar mensagem da empresa:", result.error);
+            console.error(`❌ Falha ao processar mensagem para instância ${instanceName}:`, result.error);
             return res.status(500).json({
               success: false,
-              message: "Falha ao processar mensagem da empresa",
+              message: "Falha ao processar mensagem",
               error: result.error
             });
           }
-        } else {
-          // Processamento normal para mensagens recebidas
-          console.log("📥 MENSAGEM RECEBIDA - Processando normalmente...");
           
-          // Extrair texto da mensagem de forma segura
-          let inboundMessageText = '';
-          let messageType = '';
-          let isMediaMessage = false;
-         
-          if (messageData.message.conversation) {
-            inboundMessageText = messageData.message.conversation;
-            messageType = 'texto';
-          } else if (messageData.message.extendedTextMessage) {
-            inboundMessageText = messageData.message.extendedTextMessage.text || '';
-            messageType = 'texto';
-          } else if (messageData.message.imageMessage) {
-            inboundMessageText = '[IMAGEM]';
-            messageType = 'imagem';
-            isMediaMessage = true;
-          } else if (messageData.message.audioMessage) {
-            inboundMessageText = '[ÁUDIO]';
-            messageType = 'áudio';
-            isMediaMessage = true;
-          } else if (messageData.message.videoMessage) {
-            inboundMessageText = '[VÍDEO]';
-            messageType = 'vídeo';
-            isMediaMessage = true;
-          } else if (messageData.message.documentMessage) {
-            inboundMessageText = '[DOCUMENTO]';
-            messageType = 'documento';
-            isMediaMessage = true;
-          } else {
-            inboundMessageText = '[MENSAGEM]';
-            messageType = 'desconhecido';
-          }
-        
-          const inboundPhoneNumber = `+${messageData.key.remoteJid.replace('@s.whatsapp.net', '')}`;
-          const pushName = messageData.pushName || messageData.data?.pushName;
-          
-          // Verificações anti-loop (apenas se houver texto)
-          if (inboundMessageText && typeof inboundMessageText === 'string') {
-            if (inboundMessageText.includes('[SISTEMA]') || inboundMessageText.includes('[GHL]') || inboundMessageText.includes('[INTEGRATION]')) {
-              console.log(`🔄 Mensagem ignorada - contém marcadores do sistema: "${inboundMessageText}"`);
-              return res.status(200).json({ success: true, message: "Mensagem do sistema ignorada" });
-            }
-            
-            if (inboundMessageText.toLowerCase().includes('status: delivered') || 
-                inboundMessageText.toLowerCase().includes('message sent') || 
-                inboundMessageText.toLowerCase().includes('integration')) {
-              console.log(`🔄 Mensagem ignorada - parece ser resposta automática do sistema: "${inboundMessageText}"`);
-              return res.status(200).json({ success: true, message: "Resposta automática ignorada" });
-            }
-          }
-          
-          console.log(`Mensagem recebida do telefone ${inboundPhoneNumber}: "${inboundMessageText}"`);
-          console.log(`Tipo de mensagem: ${messageType}`);
-          console.log(`Push Name: ${pushName}`);
-          
-          // Se for mensagem de mídia, apenas logar o tipo (sem resposta automática)
-          if (isMediaMessage) {
-            console.log(`📱 Mensagem de ${messageType} detectada - será sincronizada no CRM como [${messageType.toUpperCase()}]`);
-          }
-         
-          // Identificar instância para processamento normal
-          const instanceName = req.body.instance || req.body.instanceName || req.body.data?.instanceName || req.body.source?.instanceName;
-        
-          if (!instanceName) {
-            console.error("❌ NÃO É POSSÍVEL IDENTIFICAR A INSTÂNCIA - mensagem será ignorada");
-            return res.status(400).json({
-              success: false,
-              message: "Não é possível identificar a instância que recebeu a mensagem"
-            });
-          }
-          
-          console.log(`🔍 Instância identificada: ${instanceName}`);
-          
-          // Buscar instalação específica
-          try {
-            const targetInstallation = await ghl.model.getInstallationByInstanceName(instanceName);
-            
-            if (!targetInstallation) {
-              console.error(`❌ Instalação não encontrada para a instância: ${instanceName}`);
-              return res.status(404).json({
-                success: false,
-                message: `Instalação não encontrada para a instância: ${instanceName}`
-              });
-            }
-            
-            console.log(`✅ Instalação encontrada para instância ${instanceName}:`, {
-              locationId: targetInstallation.locationId,
-              companyId: targetInstallation.companyId,
-              evolutionInstanceName: targetInstallation.evolutionInstanceName
-            });
-            
-            const resourceId = targetInstallation.locationId || targetInstallation.companyId;
-            
-            if (!resourceId) {
-              console.error("❌ ResourceId não encontrado na instalação");
-              return res.status(500).json({
-                success: false,
-                message: "ResourceId não encontrado na instalação"
-              });
-            }
-            
-            const dynamicConfig: IntegrationConfig = {
-              ...baseIntegrationConfig,
-              defaultInstanceName: targetInstallation.evolutionInstanceName || baseIntegrationConfig.defaultInstanceName
-            };
-            
-            const dynamicIntegrationService = new IntegrationService(dynamicConfig);
-            const result = await dynamicIntegrationService.processIncomingMessage(
-              inboundPhoneNumber,
-              inboundMessageText,
-              resourceId,
-              pushName
-            );
-            
-            if (result.success) {
-              console.log(`✅ Mensagem processada com sucesso para a instância correta: ${instanceName} -> ${resourceId}`);
-              return res.status(200).json({
-                success: true,
-                message: "Mensagem processada e sincronizada com GHL para a subconta correta",
-                data: {
-                  instanceName,
-                  resourceId,
-                  phoneNumber: inboundPhoneNumber,
-                  message: inboundMessageText
-                }
-              });
-            } else {
-              console.error(`❌ Falha ao processar mensagem para instância ${instanceName}:`, result.error);
-              return res.status(500).json({
-                success: false,
-                message: "Falha ao processar mensagem",
-                error: result.error
-              });
-            }
-            
-          } catch (error: any) {
-            console.error(`❌ Erro ao buscar instalação para instância ${instanceName}:`, error);
-            return res.status(500).json({
-              success: false,
-              message: "Erro interno ao buscar instalação",
-              error: error.message
-            });
-          }
-        } // ✅ FECHAMENTO DO IF (fromMe)
-      } // ✅ FECHAMENTO DO IF (messages.upsert)
-
-      res.status(200).json({
+        } catch (error: any) {
+          console.error(`❌ Erro ao buscar instalação para instância ${instanceName}:`, error);
+          return res.status(500).json({
+            success: false,
+            message: "Erro interno ao buscar instalação",
+            error: error.message
+          });
+        }
+      }
+      
+      // ✅ NOVO: Se chegou até aqui, é um evento não suportado
+      console.log(`ℹ️ Evento não suportado ou processado com sucesso`);
+      return res.status(200).json({
         success: true,
-        message: "Tipo de evento não suportado ou mensagem de saída"
+        message: "Evento processado com sucesso"
       });
     } catch (error: any) {
       console.error("Erro ao processar webhook Evolution:", error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         message: "Erro interno ao processar webhook",
         error: error.message
