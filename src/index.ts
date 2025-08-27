@@ -1,4 +1,4 @@
-import express, { Express, Request, Response } from "express";
+import express, { Express, Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -113,30 +113,6 @@ console.log('Banco de Dados:', (process.env.DB_HOST && process.env.DB_USER && pr
 console.log('================================');
 
 // Middleware de logging seguro já aplicado acima
-
-// Middleware para tratamento de erros seguro
-app.use((error: any, req: Request, res: Response) => {
-  // Log seguro sem expor dados sensíveis
-  console.error('Erro não tratado:', {
-    message: error.message,
-    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
-    path: req.path,
-    method: req.method,
-    ip: req.ip,
-    timestamp: new Date().toISOString()
-  });
-  
-  // Resposta genérica para produção
-  res.status(500).json({
-    success: false,
-    message: process.env.NODE_ENV === 'development' ? 'Erro interno do servidor' : 'Erro interno',
-    error: process.env.NODE_ENV === 'development' ? error.message : 'Erro interno',
-    timestamp: new Date().toISOString(),
-    requestId: req.headers['x-request-id'] || 'unknown'
-  });
-});
-
-
 
 // Rota intermediária para capturar instanceName antes do OAuth
 app.get("/authorize-start", 
@@ -1673,6 +1649,32 @@ app.get("/integration/update-message-status/:resourceId/:messageId",
       message: 'Erro interno ao atualizar status da mensagem',
       error: error.response?.data || error.message
     });
+  }
+});
+
+// Middleware para tratamento de erros seguro (DEVE SER O ÚLTIMO)
+app.use((error: any, req: Request, res: Response, next: NextFunction) => {
+  // Log seguro sem expor dados sensíveis
+  console.error('Erro não tratado:', {
+    message: error.message,
+    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    path: req.path,
+    method: req.method,
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
+  
+  // Resposta genérica para produção
+  if (res && typeof res.status === 'function') {
+    res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'development' ? 'Erro interno do servidor' : 'Erro interno',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Erro interno',
+      timestamp: new Date().toISOString(),
+      requestId: req.headers['x-request-id'] || 'unknown'
+    });
+  } else {
+    console.error('Erro crítico: objeto res não é válido:', res);
   }
 });
 
