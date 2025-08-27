@@ -978,14 +978,18 @@ app.post("/webhook/evolution",
     try {
       // ✅ NOVO: Log detalhado do webhook recebido
       console.log("🔔 WEBHOOK EVOLUTION RECEBIDO:");
+      console.log("🔍 ID único da requisição:", req.headers['x-request-id'] || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+      console.log("🔍 IP do remetente:", req.ip || req.connection.remoteAddress);
+      console.log("🔍 User-Agent:", req.headers['user-agent']);
+      console.log("🔍 Timestamp recebimento:", new Date().toISOString());
       console.log("📋 Headers:", {
         'content-type': req.headers['content-type'],
         'user-agent': req.headers['user-agent'],
         'x-forwarded-for': req.headers['x-forwarded-for'],
-        'x-real-ip': req.headers['x-real-ip']
+        'x-real-ip': req.headers['x-real-ip'],
+        'x-request-id': req.headers['x-request-id']
       });
       console.log("📋 Body completo:", JSON.stringify(req.body, null, 2));
-      console.log("📋 Timestamp recebimento:", new Date().toISOString());
       
       // ✅ NOVO: Verificar se é um evento de mensagem
       if (req.body.event !== 'messages.upsert') {
@@ -1010,62 +1014,116 @@ app.post("/webhook/evolution",
       console.log("✅ Dados da mensagem encontrados");
       
       const messageData = req.body.data;
-        
-      // Verificar se a estrutura da mensagem está correta
-      if (!messageData || !messageData.message || !messageData.key) {
-        console.error("❌ Estrutura da mensagem inválida:", messageData);
-        return res.status(400).json({
-          success: false,
-          message: "Estrutura da mensagem inválida"
-        });
-      }
-
-      // ✅ NOVO: Detectar se é mensagem enviada pela empresa (fromMe=true)
-      const isFromMe = messageData.key.fromMe === true;
-      
-      if (isFromMe) {
-        console.log("📤 MENSAGEM FROM_ME DETECTADA - Processando como mensagem da empresa...");
-        
-        // ✅ CORREÇÃO: Usar ID único da mensagem da Evolution API para deduplicação
-        const messageId = messageData.key.id;
-        if (!messageId) {
-          console.error("❌ MENSAGEM SEM ID ÚNICO - Não é possível deduplicar");
+          
+        // Verificar se a estrutura da mensagem está correta
+        if (!messageData || !messageData.message || !messageData.key) {
+          console.error("❌ Estrutura da mensagem inválida:", messageData);
           return res.status(400).json({
             success: false,
-            message: "Mensagem sem ID único para deduplicação"
+            message: "Estrutura da mensagem inválida"
           });
         }
+
+        // ✅ NOVO: Detectar se é mensagem enviada pela empresa (fromMe=true)
+        const isFromMe = messageData.key.fromMe === true;
         
-        console.log(`🔍 Verificando duplicação - MessageID: ${messageId}`);
-        
-        // ✅ CORREÇÃO: Verificar se já processamos esta mensagem específica
-        if (global.recentProcessedMessages && global.recentProcessedMessages[messageId]) {
-          console.log(`🔄 MENSAGEM DUPLICADA DETECTADA - ID: ${messageId}`);
-          console.log(`🔄 Última processada em: ${global.recentProcessedMessages[messageId]}`);
-          console.log(`🔄 Ignorando para evitar duplicação no GHL`);
-          return res.status(200).json({
-            success: true,
-            message: "Mensagem duplicada ignorada para evitar duplicação no GHL",
-            messageId: messageId
+        if (isFromMe) {
+          console.log("📤 MENSAGEM FROM_ME DETECTADA - Processando como mensagem da empresa...");
+          
+          // ✅ CORREÇÃO ROBUSTA: Usar múltiplos identificadores para deduplicação
+          const messageId = messageData.key.id;
+          const timestamp = messageData.messageTimestamp || Date.now();
+          const senderPhone = messageData.key.remoteJid;
+          const recipientPhone = messageData.key.participant;
+          
+          // ✅ NOVO: Criar chave de deduplicação mais robusta
+          const dedupKey = `${messageId}_${senderPhone}_${recipientPhone}_${timestamp}`;
+          
+          console.log(`🔍 Verificando duplicação - Chave: ${dedupKey}`);
+          console.log(`📋 Detalhes:`, {
+            messageId,
+            timestamp: new Date(timestamp * 1000).toISOString(),
+            senderPhone,
+            recipientPhone,
+            fromMe: messageData.key.fromMe
           });
-        }
-        
-        // ✅ CORREÇÃO: Marcar esta mensagem como processada usando o ID único
-        if (!global.recentProcessedMessages) {
-          global.recentProcessedMessages = {};
-        }
-        global.recentProcessedMessages[messageId] = new Date().toISOString();
-        
-        // ✅ CORREÇÃO: Limpar mensagens antigas (mais de 60 segundos) para evitar acúmulo
-        setTimeout(() => {
-          if (global.recentProcessedMessages && global.recentProcessedMessages[messageId]) {
-            delete global.recentProcessedMessages[messageId];
-            console.log(`🧹 Mensagem antiga removida da cache de deduplicação: ${messageId}`);
+          
+          // ✅ NOVO: Verificar se já processamos esta mensagem específica
+          if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKey]) {
+            console.log(`🔄 MENSAGEM DUPLICADA DETECTADA - Chave: ${dedupKey}`);
+            console.log(`🔄 Última processada em: ${global.recentProcessedMessages[dedupKey]}`);
+            console.log(`🔄 Ignorando para evitar duplicação no GHL`);
+            console.log(`🔄 Cache atual:`, global.recentProcessedMessages);
+            return res.status(200).json({
+              success: true,
+              message: "Mensagem duplicada ignorada para evitar duplicação no GHL",
+              dedupKey: dedupKey,
+              messageId: messageId
+            });
           }
-        }, 60000); // 60 segundos
-        
-        console.log(`✅ Mensagem marcada como processada - ID: ${messageId}`);
-        console.log(`📊 Total de mensagens em cache: ${Object.keys(global.recentProcessedMessages).length}`);
+          
+          // ✅ NOVO: Verificação adicional - se a mensagem tem timestamp muito recente, pode ser duplicada
+          const now = Date.now();
+          const messageTime = timestamp * 1000; // Converter para milissegundos
+          const timeDiff = now - messageTime;
+          
+          console.log(`⏰ Verificação de tempo:`, {
+            agora: new Date(now).toISOString(),
+            mensagem: new Date(messageTime).toISOString(),
+            diferenca_ms: timeDiff,
+            diferenca_segundos: Math.round(timeDiff / 1000)
+          });
+          
+          // ✅ NOVO: Se a mensagem é muito recente (menos de 5 segundos), verificar se não é duplicada
+          if (timeDiff < 5000) {
+            console.log(`⚠️ MENSAGEM MUITO RECENTE - Verificando duplicação por tempo...`);
+            
+            // Verificar se há mensagens similares nos últimos 10 segundos
+            const recentKeys = Object.keys(global.recentProcessedMessages || {});
+            const similarMessages = recentKeys.filter(key => {
+              const keyParts = key.split('_');
+              if (keyParts.length >= 4) {
+                const keySenderPhone = keyParts[1];
+                const keyRecipientPhone = keyParts[2];
+                const keyTimestamp = parseInt(keyParts[3]);
+                const keyTimeDiff = now - (keyTimestamp * 1000);
+                
+                return keySenderPhone === senderPhone && 
+                       keyRecipientPhone === recipientPhone && 
+                       keyTimeDiff < 10000; // 10 segundos
+              }
+              return false;
+            });
+            
+            if (similarMessages.length > 0) {
+              console.log(`🔄 MENSAGEM SIMILAR RECENTE DETECTADA:`, similarMessages);
+              console.log(`🔄 Ignorando para evitar duplicação no GHL`);
+              return res.status(200).json({
+                success: true,
+                message: "Mensagem similar recente ignorada para evitar duplicação no GHL",
+                similarMessages: similarMessages,
+                dedupKey: dedupKey
+              });
+            }
+          }
+          
+          // ✅ NOVO: Marcar esta mensagem como processada usando a chave robusta
+          if (!global.recentProcessedMessages) {
+            global.recentProcessedMessages = {};
+          }
+          global.recentProcessedMessages[dedupKey] = new Date().toISOString();
+          
+          // ✅ NOVO: Limpar mensagens antigas (mais de 120 segundos) para evitar acúmulo
+          setTimeout(() => {
+            if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKey]) {
+              delete global.recentProcessedMessages[dedupKey];
+              console.log(`🧹 Mensagem antiga removida da cache de deduplicação: ${dedupKey}`);
+            }
+          }, 120000); // 120 segundos
+          
+          console.log(`✅ Mensagem marcada como processada - Chave: ${dedupKey}`);
+          console.log(`📊 Total de mensagens em cache: ${Object.keys(global.recentProcessedMessages).length}`);
+          console.log(`📊 Cache atual:`, global.recentProcessedMessages);
         
         // Extrair dados da mensagem enviada pela empresa
         let outboundMessageText = '';
