@@ -14,6 +14,7 @@ Sistema de integração bidirecional entre **GoHighLevel CRM** e **Evolution API
 - **📊 Monitoramento**: Status de integrações e sincronização
 - **🔐 OAuth2 GHL**: Integração oficial com marketplace GoHighLevel
 - **🆕 InstanceName Dinâmico**: Captura via rota intermediária e cookies
+- **🏷️ Parâmetro Tag**: Captura e armazenamento de tag personalizada na instalação ✅ **NOVO**
 - **📱 Status de Mensagens**: Atualização automática para "delivered" ✅ **FUNCIONANDO**
 - **🗑️ Desinstalação Automática**: Via webhook GHL
 - **🧹 Validação Robusta**: InstanceName obrigatório e validações de segurança
@@ -87,6 +88,7 @@ NODE_ENV=development
 ```
 
 **⚠️ IMPORTANTE:** As seguintes variáveis de segurança **NÃO são mais necessárias**:
+
 - ~~`INTERNAL_API_KEY`~~ - Substituída por validação de credenciais GHL
 - ~~`GHL_WEBHOOK_SECRET`~~ - Substituída por validação de credenciais GHL
 - ~~`EVOLUTION_WEBHOOK_SECRET`~~ - Substituída por validação de credenciais GHL
@@ -136,33 +138,41 @@ npm run db:migrate
 ### Autenticação e Instalação
 
 #### `GET /authorize-start`
+
 Rota intermediária para capturar `instanceName` antes do OAuth GHL.
 
 **Parâmetros:**
+
 - `instanceName` (obrigatório): Nome da instância Evolution API
 
 **Exemplo:**
+
 ```bash
 GET /authorize-start?instanceName=backend_server
 ```
 
 **Resposta:**
+
 - Redireciona para OAuth GHL preservando o `instanceName`
 - Armazena `instanceName` em cookie temporário
 
 #### `GET /authorize-handler`
+
 Callback para processar a autorização OAuth2.
 
 **Parâmetros:**
+
 - `code`: Código de autorização
 - `state`: Estado da requisição
 
 ### Integração
 
 #### `POST /integration/setup`
+
 Configura uma nova integração entre GHL e Evolution API.
 
 **Corpo da Requisição:**
+
 ```json
 {
   "resourceId": "73NtQAAH2EvgoqRsx6qJ",
@@ -171,6 +181,7 @@ Configura uma nova integração entre GHL e Evolution API.
 ```
 
 **Resposta:**
+
 ```json
 {
   "success": true,
@@ -183,9 +194,11 @@ Configura uma nova integração entre GHL e Evolution API.
 ```
 
 #### `POST /integration/sync-contacts`
+
 Sincroniza contatos entre GHL e Evolution API.
 
 **Corpo da Requisição:**
+
 ```json
 {
   "resourceId": "73NtQAAH2EvgoqRsx6qJ"
@@ -193,9 +206,11 @@ Sincroniza contatos entre GHL e Evolution API.
 ```
 
 #### `POST /integration/send-message`
+
 Envia mensagem do GHL para WhatsApp via Evolution API.
 
 **Corpo da Requisição:**
+
 ```json
 {
   "resourceId": "73NtQAAH2EvgoqRsx6qJ",
@@ -205,9 +220,11 @@ Envia mensagem do GHL para WhatsApp via Evolution API.
 ```
 
 #### `GET /integration/status`
+
 Verifica o status de todas as integrações ativas.
 
 **Resposta:**
+
 ```json
 {
   "success": true,
@@ -225,12 +242,15 @@ Verifica o status de todas as integrações ativas.
 ```
 
 #### `DELETE /integration/uninstall/:resourceId`
+
 Remove manualmente uma instalação do app.
 
 **Parâmetros:**
+
 - `resourceId`: ID da localização ou empresa
 
 **Resposta:**
+
 ```json
 {
   "success": true,
@@ -249,9 +269,11 @@ Remove manualmente uma instalação do app.
 ```
 
 #### `GET /integration/installations`
+
 Lista todas as instalações ativas no sistema.
 
 **Resposta:**
+
 ```json
 {
   "success": true,
@@ -280,10 +302,12 @@ Lista todas as instalações ativas no sistema.
 Atualiza o status de uma mensagem específica para "delivered" no GHL.
 
 **Parâmetros:**
+
 - `resourceId`: ID da subconta (location) ou empresa
 - `messageId`: ID da mensagem a ser atualizada
 
 **Payload:**
+
 ```json
 {
   "status": "delivered"
@@ -291,11 +315,13 @@ Atualiza o status de uma mensagem específica para "delivered" no GHL.
 ```
 
 **Headers:**
+
 ```
 Version: 2021-04-15
 ```
 
 **Resposta de Sucesso:**
+
 ```json
 {
   "success": true,
@@ -311,10 +337,12 @@ Version: 2021-04-15
 **Mesma funcionalidade da rota PUT, mas via GET para facilitar testes.**
 
 **Parâmetros:**
+
 - `resourceId`: ID da subconta (location) ou empresa
 - `messageId`: ID da mensagem a ser atualizada
 
 **Resposta de Sucesso:**
+
 ```json
 {
   "success": true,
@@ -328,17 +356,21 @@ Version: 2021-04-15
 ### Webhooks
 
 #### `POST /webhook/ghl`
+
 Recebe eventos do GoHighLevel (instalação, desinstalação, mensagens).
 
 **Eventos Suportados:**
+
 - `INSTALL`: Nova instalação da aplicação
 - `UNINSTALL`: Desinstalação da aplicação
 - `OutboundMessage`: Mensagem enviada do GHL (status atualizado automaticamente para "delivered")
 
 #### `POST /webhook/evolution`
+
 Recebe mensagens do WhatsApp via Evolution API.
 
 **Estrutura do Webhook:**
+
 ```json
 {
   "event": "messages.upsert",
@@ -359,13 +391,116 @@ Recebe mensagens do WhatsApp via Evolution API.
 ### Utilitários
 
 #### `GET /health`
+
 Verifica a saúde do sistema.
 
 #### `GET /config`
+
 Exibe as configurações atuais do sistema.
 
 #### `POST /test-evolution`
+
 Testa a conectividade com Evolution API.
+
+## 🏷️ Parâmetro Tag - Nova Funcionalidade
+
+### O que é o Parâmetro Tag?
+
+O parâmetro `tag` é uma funcionalidade opcional que permite identificar e categorizar instalações específicas do sistema. É útil para:
+
+- **Identificação de clientes**: Cada cliente pode ter sua própria tag
+- **Organização**: Agrupar instalações por projeto ou empresa
+- **Debugging**: Facilitar identificação de instalações em logs
+- **Relatórios**: Filtrar instalações por tag específica
+
+### Como Usar
+
+#### **URL de Autorização com Tag:**
+
+```
+https://seu-dominio.com/authorize-start?instanceName=minha_instancia&tag=cliente_123
+```
+
+#### **URL de Autorização sem Tag (funciona como antes):**
+
+```
+https://seu-dominio.com/authorize-start?instanceName=minha_instancia
+```
+
+### Exemplos Práticos
+
+#### **1. Por Cliente:**
+
+```
+https://seu-dominio.com/authorize-start?instanceName=backend_server&tag=empresa_abc
+https://seu-dominio.com/authorize-start?instanceName=backend_server&tag=empresa_xyz
+```
+
+#### **2. Por Projeto:**
+
+```
+https://seu-dominio.com/authorize-start?instanceName=prod&tag=projeto_ecommerce
+https://seu-dominio.com/authorize-start?instanceName=dev&tag=projeto_teste
+```
+
+#### **3. Por Ambiente:**
+
+```
+https://seu-dominio.com/authorize-start?instanceName=main&tag=producao
+https://seu-dominio.com/authorize-start?instanceName=test&tag=desenvolvimento
+```
+
+### Consultando Instalações com Tag
+
+#### **Listar todas as instalações:**
+
+```bash
+curl "http://localhost:3000/integration/installations"
+```
+
+**Resposta:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "installations": [
+      {
+        "id": 1,
+        "locationId": "73NtQAAH2EvgoqRsx6qJ",
+        "evolutionInstanceName": "backend_server",
+        "tag": "cliente_123",
+        "integrationStatus": "active",
+        "createdAt": "2025-10-22T14:50:19.653Z"
+      }
+    ]
+  }
+}
+```
+
+### Fluxo Completo com Tag
+
+1. **Cliente chama** `/authorize-start?instanceName=X&tag=Y`
+2. **Sistema captura** `instanceName` e `tag` da URL
+3. **Armazena** ambos em cookies temporários (5 minutos)
+4. **Redireciona** para OAuth GHL
+5. **GHL redireciona** para `/authorize-handler` com código
+6. **Sistema recupera** `instanceName` e `tag` dos cookies
+7. **Processa** autorização OAuth
+8. **Salva** instalação no banco **incluindo a tag**
+9. **Limpa** cookies temporários
+
+### Logs Esperados
+
+```
+🔐 Iniciando autorização com instanceName: backend_server e tag: cliente_123
+🍪 Cookie tempInstanceName definido: backend_server
+🍪 Cookie tempTag definido: cliente_123
+🔍 InstanceName recuperado do cookie: backend_server
+🔍 Tag recuperada do cookie: cliente_123
+💾 tag: cliente_123
+✅ Instalação salva com sucesso para a subconta: 73NtQAAH2EvgoqRsx6qJ
+```
 
 ## 🔧 Uso da Integração
 
@@ -383,12 +518,12 @@ npm run dev
 ### 2. Autorização GoHighLevel
 
 ```bash
-# 1. Use a rota intermediária para capturar instanceName:
-curl "http://localhost:3000/authorize-start?instanceName=backend_server"
+# 1. Use a rota intermediária para capturar instanceName e tag:
+curl "http://localhost:3000/authorize-start?instanceName=backend_server&tag=cliente_123"
 
-# 2. O sistema redirecionará para o OAuth do GHL preservando o instanceName
+# 2. O sistema redirecionará para o OAuth do GHL preservando o instanceName e tag
 # 3. Complete o fluxo OAuth2 no navegador
-# 4. O sistema capturará o instanceName e salvará no banco durante a autorização
+# 4. O sistema capturará o instanceName e tag e salvará no banco durante a autorização
 # 5. A instância Evolution será configurada automaticamente com o nome personalizado
 ```
 
@@ -429,17 +564,21 @@ curl "http://localhost:3000/integration/status"
 ### Autenticação e Instalação
 
 #### `GET /authorize-start`
+
 Rota intermediária para capturar `instanceName` antes do OAuth GHL.
 
 **Parâmetros:**
+
 - `instanceName` (obrigatório): Nome da instância Evolution API
 
 **Exemplo:**
+
 ```bash
 GET /authorize-start?instanceName=backend_server
 ```
 
 **Resposta:**
+
 - Redireciona para OAuth GHL preservando o `instanceName`
 - Armazena `instanceName` em cookie temporário
 
@@ -540,33 +679,40 @@ npm run dev
 ## 🆕 **Funcionalidades Implementadas - Resumo**
 
 ### ✅ **Sistema de Autorização OAuth2**
-- **Rota `/authorize-start`**: Captura `instanceName` antes do OAuth
+
+- **Rota `/authorize-start`**: Captura `instanceName` e `tag` antes do OAuth
 - **Sistema de Cookies**: Preserva dados durante redirecionamentos
 - **Validação Obrigatória**: `instanceName` é obrigatório para instalação
+- **Parâmetro Tag**: Captura e armazenamento de tag personalizada ✅ **NOVO**
 - **Integração Oficial GHL**: Usa marketplace oficial do GoHighLevel
 
 ### ✅ **Gestão de InstanceName Dinâmico**
+
 - **Captura Personalizada**: Cada cliente pode ter sua instância Evolution
 - **Armazenamento Seguro**: Via cookies temporários (5 minutos)
 - **Fallback Inteligente**: Valor padrão se necessário
 - **Validação Robusta**: Erro claro se `instanceName` não for fornecido
 
 ### ✅ **Sincronização Bidirecional**
+
 - **WhatsApp → GHL**: Mensagens recebidas aparecem no lado esquerdo
 - **GHL → WhatsApp**: Mensagens enviadas com status "delivered" automático ✅ **FUNCIONANDO 100%**
 - **Prevenção de Loops**: Sistema anti-repetição implementado
 - **Gestão Automática**: Contatos e conversas criados automaticamente
 
 ### ✅ **Webhooks e Automação**
+
 - **Webhook GHL**: Instalação, desinstalação e mensagens
 - **Webhook Evolution**: Mensagens recebidas do WhatsApp
 
 ### ✅ **API Key Evolution Global**
+
 - **Configuração Centralizada**: Uma única API Key para todas as instâncias
 - **Autenticação Robusta**: Validação automática com Evolution API
 - **Status de Mensagens**: Atualização automática para "delivered" funcionando
 
 ### ✅ **Detecção Inteligente de Mídia**
+
 - **Identificação Automática**: Detecta áudio, imagem, vídeo e documentos
 - **Notificação no CRM**: Marca mensagens com `[ÁUDIO]`, `[IMAGEM]`, `[VÍDEO]`, `[DOCUMENTO]`
 - **Sem Interferência**: Nenhuma resposta automática é enviada ao cliente
@@ -581,11 +727,13 @@ O sistema agora utiliza **validação de credenciais GHL** em vez de chaves de A
 #### **Como Funciona:**
 
 1. **Durante a Instalação**: O sistema captura e armazena automaticamente:
+
    - `client_id` do GHL
    - `client_secret` do GHL
    - `location_id` da subconta
 
 2. **Durante as Requisições**: O cliente deve incluir nos headers:
+
    - `X-GHL-Client-ID`: Seu client_id do GHL
    - `X-GHL-Client-Secret`: Seu client_secret do GHL
 
@@ -617,6 +765,7 @@ curl -X POST "http://localhost:3000/integration/send-message" \
 #### **Rotas Protegidas:**
 
 **🔒 Validação Completa (credenciais GHL):**
+
 - `POST /integration/setup`
 - `POST /integration/send-message`
 - `POST /integration/sync-contacts`
@@ -628,6 +777,7 @@ curl -X POST "http://localhost:3000/integration/send-message" \
 - `GET /example-api-call-location`
 
 **🔓 Validação Simples (apenas instalação existe):**
+
 - `GET /integration/status`
 - `GET /integration/installations`
 - `GET /test-evolution`
@@ -635,6 +785,7 @@ curl -X POST "http://localhost:3000/integration/send-message" \
 - **Status de Mensagens**: Atualização automática para "delivered"
 
 ### ✅ **Segurança e Validação**
+
 - **Validação de LocationId**: Apenas instalações em subcontas
 - **Tratamento de Erros**: Logs detalhados e mensagens claras
 - **Middleware de Segurança**: Interceptadores para tokens e autenticação
@@ -645,41 +796,53 @@ curl -X POST "http://localhost:3000/integration/send-message" \
 ### ❌ **Erros Comuns e Soluções**
 
 #### 1. **"instanceName é obrigatório"**
+
 **Problema**: Erro durante autorização
-**Solução**: 
+**Solução**:
+
 - Use a rota `/authorize-start?instanceName=seu_nome`
 - Não use diretamente a rota `/authorize-handler`
 
 #### 2. **"App deve ser instalado em subconta (location)"**
+
 **Problema**: Instalação em empresa principal
 **Solução**:
+
 - Desinstale o app da empresa
 - Instale diretamente na subconta desejada
 
 #### 3. **Mensagens aparecendo no lado errado**
+
 **Problema**: Posicionamento incorreto no GHL
 **Solução**:
+
 - Sistema já corrigido automaticamente
 - Mensagens recebidas aparecem à esquerda
 - Mensagens enviadas aparecem à direita
 
 #### 4. **Status de mensagem não atualiza para "delivered"**
+
 **Problema**: Status permanece "pending"
 **Solução**:
+
 - Verifique se `messageId` está sendo passado
 - Sistema atualiza automaticamente após envio via Evolution API
 
 #### 5. **Erro 401 Unauthorized da Evolution API**
+
 **Problema**: Mensagens do CRM não chegam no WhatsApp
 **Solução**:
+
 - ✅ **CORRIGIDO**: Configure uma `EVOLUTION_API_KEY` válida no arquivo `.env`
 - Verifique se a API Key é global e tem permissões adequadas
 - Teste a conectividade via `/test-evolution`
 
 #### 6. **❌ NOVO: Erro 403 "The token does not have access to this location"**
+
 **Problema**: Token não tem acesso à localização especificada
 **Causa**: **Inconsistência de conexões GHL entre módulos do cenário Make**
 **Solução**:
+
 - ✅ **SOLUÇÃO IMPLEMENTADA**: Use as novas rotas de validação de consistência
 - Verifique se todos os módulos GHL usam a mesma conexão/subconta
 - Valide a consistência antes de executar o cenário
@@ -687,7 +850,9 @@ curl -X POST "http://localhost:3000/integration/send-message" \
 ### 🔍 **Solução para Inconsistência de Conexões GHL**
 
 #### **Problema Identificado**
+
 Quando você tem um cenário Make com múltiplos módulos GHL, se eles não estiverem configurados com a **mesma conexão/subconta**, você receberá o erro:
+
 ```
 403 - The token does not have access to this location
 ```
@@ -695,6 +860,7 @@ Quando você tem um cenário Make com múltiplos módulos GHL, se eles não esti
 #### **Como Resolver**
 
 ##### **1. Validação de Consistência de Conexões**
+
 Use a nova rota para validar se todos os módulos estão usando a mesma conexão:
 
 ```bash
@@ -707,6 +873,7 @@ POST /integration/validate-connection-consistency
 ```
 
 **Resposta de Sucesso:**
+
 ```json
 {
   "success": true,
@@ -724,6 +891,7 @@ POST /integration/validate-connection-consistency
 ```
 
 **Resposta de Erro (Inconsistência Detectada):**
+
 ```json
 {
   "success": false,
@@ -744,6 +912,7 @@ POST /integration/validate-connection-consistency
 ```
 
 ##### **2. Validação de ResourceId para Operações**
+
 Use esta rota para validar se um resourceId específico é válido para uma operação:
 
 ```bash
@@ -761,15 +930,18 @@ POST /integration/validate-resource-id
 #### **Passos para Corrigir no Make**
 
 1. **Identifique o Problema**:
+
    - Execute a validação de consistência
    - Verifique se há inconsistência entre resourceIds
 
 2. **Corrija as Conexões**:
+
    - Em cada módulo GHL do cenário, verifique a configuração de conexão
    - Certifique-se de que todos apontem para a **mesma subconta**
    - Não misture conexões de diferentes subcontas
 
 3. **Teste a Correção**:
+
    - Execute novamente a validação
    - Teste o cenário completo
 
@@ -784,7 +956,7 @@ Módulo 1: GHL Search Contacts
 ├── Conexão: Subconta A (locationId: 73NtQAAH2EvgoqRsx6qJ)
 └── Output: contactId
 
-Módulo 2: GHL Send Message  
+Módulo 2: GHL Send Message
 ├── Conexão: Subconta A (locationId: 73NtQAAH2EvgoqRsx6qJ) ✅
 └── Input: contactId (do módulo anterior)
 
@@ -794,12 +966,13 @@ Módulo 3: GHL Update Contact
 ```
 
 **❌ INCORRETO (Causa o erro 403):**
+
 ```
 Módulo 1: GHL Search Contacts
 ├── Conexão: Subconta A (locationId: 73NtQAAH2EvgoqRsx6qJ)
 └── Output: contactId
 
-Módulo 2: GHL Send Message  
+Módulo 2: GHL Send Message
 ├── Conexão: Subconta B (locationId: outro_id) ❌
 └── Input: contactId (do módulo anterior)
 ```
@@ -807,6 +980,7 @@ Módulo 2: GHL Send Message
 #### **Implementação Prática no Make**
 
 ##### **Passo 1: Adicione Validação de Consistência**
+
 No início do seu cenário Make, adicione um módulo HTTP para validar a consistência:
 
 ```
@@ -823,6 +997,7 @@ Módulo 0: HTTP Request (Validação de Consistência)
 ```
 
 ##### **Passo 2: Configure o Mapeamento**
+
 Mapeie o `resourceId` de todos os módulos GHL para usar o mesmo valor:
 
 ```
@@ -831,7 +1006,7 @@ Módulo 1: GHL Search Contacts
 ├── Location ID: {{resourceId}} (use o mesmo valor em todos)
 └── Output: contactId
 
-Módulo 2: GHL Send Message  
+Módulo 2: GHL Send Message
 ├── Conexão: Subconta A
 ├── Location ID: {{resourceId}} (mesmo valor)
 └── Input: contactId (do módulo anterior)
@@ -843,6 +1018,7 @@ Módulo 3: GHL Update Contact
 ```
 
 ##### **Passo 3: Tratamento de Erros**
+
 Configure o tratamento de erro para capturar inconsistências:
 
 ```
@@ -889,6 +1065,7 @@ Valor: 73NtQAAH2EvgoqRsx6qJ
 ```
 
 Use em todos os módulos:
+
 ```
 Location ID: {{GHL_RESOURCE_ID}}
 ```
@@ -907,6 +1084,7 @@ curl -X POST "https://seu-dominio.com/integration/validate-connection-consistenc
 ```
 
 **Resposta Esperada:**
+
 ```json
 {
   "success": true,
@@ -951,22 +1129,27 @@ O sistema gera logs detalhados para cada operação:
 ### Problemas Comuns
 
 #### 1. Erro 422 na Busca de Contatos
+
 **Sintoma**: `Request failed with status code 422`
 **Solução**: Verificar se está usando o parâmetro `query` (não `phone`)
 
 #### 2. Mensagens Aparecem no Lado Errado
+
 **Sintoma**: Mensagens do cliente aparecem à direita
 **Solução**: Verificar se está usando `/conversations/messages/inbound` com `type: "SMS"`
 
 #### 3. Loop Infinito de Mensagens
+
 **Sintoma**: Mensagens sendo re-enviadas
 **Solução**: Verificar se o webhook GHL está filtrando mensagens `inbound`
 
 #### 4. Contato Não Encontrado
+
 **Sintoma**: `Contact not found`
 **Solução**: Verificar se o `conversationId` está sendo buscado dinamicamente
 
 #### 5. Mensagens do CRM não chegam no WhatsApp
+
 **Sintoma**: Erro 401 Unauthorized da Evolution API
 **Solução**: ✅ **CORRIGIDO** - Configure `EVOLUTION_API_KEY` válida no `.env`
 
@@ -1017,24 +1200,25 @@ Se você já estava usando o sistema anterior com `INTERNAL_API_KEY`, `GHL_WEBHO
 
 ```javascript
 // 1. Botão de instalação no painel Bubble
-const instanceName = 'instancia_cliente_123';
-const authUrl = `https://seu-servidor.ngrok-free.app/authorize-start?instanceName=${instanceName}`;
+const instanceName = "instancia_cliente_123"
+const tag = "cliente_abc_123"
+const authUrl = `https://seu-servidor.ngrok-free.app/authorize-start?instanceName=${instanceName}&tag=${tag}`
 
 // 2. Abrir URL de autorização
-window.open(authUrl, '_blank');
+window.open(authUrl, "_blank")
 
 // 3. Usuário completa OAuth no GHL
-// 4. Sistema salva automaticamente o instanceName
+// 4. Sistema salva automaticamente o instanceName e tag
 // 5. Integração configurada e funcionando!
 ```
 
 ### **Teste Manual da Integração**
 
 ```bash
-# 1. Teste de autorização
-curl "http://localhost:3000/authorize-start?instanceName=teste_manual"
+# 1. Teste de autorização com tag
+curl "http://localhost:3000/authorize-start?instanceName=teste_manual&tag=cliente_teste"
 
-# 2. Verificar instalações
+# 2. Verificar instalações (deve mostrar a tag)
 curl "http://localhost:3000/integration/installations"
 
 # 3. Testar envio de mensagem
@@ -1138,6 +1322,7 @@ Para dúvidas ou problemas:
 **Erro**: Mensagens enviadas pelo WhatsApp (fromMe=true) não eram sincronizadas no GHL, retornando erro "token invalido".
 
 **Sintomas**:
+
 - ❌ Webhook Evolution com `fromMe: true` falhava
 - ❌ Erro 404 ao buscar conversas
 - ❌ Erro de token inválido
@@ -1229,6 +1414,7 @@ POST /conversations/messages
 **Agora**: Sistema direto e eficiente, focado na funcionalidade essencial
 
 **Benefícios**:
+
 - **Escalabilidade**: Menos chamadas à API = melhor performance
 - **Manutenibilidade**: Código mais simples = menos bugs
 - **Confiabilidade**: Menos pontos de falha = maior estabilidade
