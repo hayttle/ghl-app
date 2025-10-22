@@ -251,14 +251,14 @@ app.get(
       }
     } catch (error: any) {
       console.error("Erro no handler de autorização:", error)
-      
+
       // ✅ NOVO: Tratamento específico para erros de código inválido
       if (error?.message?.includes("Código de autorização já foi usado")) {
         console.error("❌ === ERRO DE CÓDIGO JÁ USADO ===")
         console.error("❌ Usuário tentou reutilizar um código de autorização")
         console.error("❌ Solução: Iniciar nova instalação")
         console.error("❌ =================================")
-        
+
         res.status(400).json({
           success: false,
           message: "Código de autorização já foi usado. Por favor, inicie uma nova instalação.",
@@ -271,6 +271,13 @@ app.get(
           message: "Código de autorização expirou. Por favor, inicie uma nova instalação.",
           error: "AUTHORIZATION_CODE_EXPIRED",
           solution: "Inicie uma nova instalação do app"
+        })
+      } else if (error?.message?.includes("Erro de banco de dados")) {
+        res.status(500).json({
+          success: false,
+          message: "Erro de configuração do banco de dados. A coluna 'tag' não existe.",
+          error: "DATABASE_SCHEMA_ERROR",
+          solution: "Execute o script SQL para adicionar a coluna 'tag' na tabela installations"
         })
       } else {
         res.status(500).json({

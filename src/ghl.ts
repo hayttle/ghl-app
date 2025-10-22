@@ -390,7 +390,10 @@ export class GHL {
           console.error("❌ DIAGNÓSTICO:")
           console.error("   🔍 Código recebido:", code ? `${code.substring(0, 10)}...` : "NENHUM")
           console.error("   🔍 Client ID:", process.env.GHL_APP_CLIENT_ID ? "✅ Configurado" : "❌ Não configurado")
-          console.error("   🔍 Client Secret:", process.env.GHL_APP_CLIENT_SECRET ? "✅ Configurado" : "❌ Não configurado")
+          console.error(
+            "   🔍 Client Secret:",
+            process.env.GHL_APP_CLIENT_SECRET ? "✅ Configurado" : "❌ Não configurado"
+          )
           console.error("   🔍 Redirect URI:", process.env.GHL_APP_REDIRECT_URI || "❌ Não configurado")
           console.error("❌ ======================================")
           console.error("❌ POSSÍVEIS CAUSAS:")
@@ -411,7 +414,9 @@ export class GHL {
           } else if (errorData?.error_description?.includes("expired")) {
             throw new Error("Código de autorização expirou. Inicie uma nova instalação.")
           } else {
-            throw new Error(`Código de autorização inválido: ${errorData?.error_description || "Código já usado ou expirado"}`)
+            throw new Error(
+              `Código de autorização inválido: ${errorData?.error_description || "Código já usado ou expirado"}`
+            )
           }
         } else if (errorData?.error === "invalid_client") {
           console.error("❌ PROBLEMA IDENTIFICADO: Client ID ou Client Secret incorretos!")
@@ -437,6 +442,21 @@ export class GHL {
         console.error("❌ === ERRO DESCONHECIDO ===")
         console.error("❌ Status:", error?.response?.status)
         console.error("❌ Dados:", error?.response?.data)
+        
+        // ✅ NOVO: Verificar se é erro de banco de dados
+        if (error?.code === '42703' && error?.message?.includes('column') && error?.message?.includes('does not exist')) {
+          console.error("❌ === ERRO DE BANCO DE DADOS ===")
+          console.error("❌ Coluna não existe no banco de dados")
+          console.error("❌ Erro:", error.message)
+          console.error("❌ =====================================")
+          console.error("❌ SOLUÇÃO:")
+          console.error("   1. Execute o script SQL para adicionar a coluna 'tag'")
+          console.error("   2. Ou execute: ALTER TABLE installations ADD COLUMN tag VARCHAR(255);")
+          console.error("❌ =====================================")
+          
+          throw new Error("Erro de banco de dados: Coluna 'tag' não existe. Execute o script SQL para adicionar a coluna.")
+        }
+        
         throw error
       }
     }
