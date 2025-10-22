@@ -168,13 +168,20 @@ app.get(
       console.log(`🍪 Cookie tempTag definido: ${tag || "não definido"}`)
 
       // Redireciona para o OAuth do GHL
+      const redirectUri = process.env.GHL_APP_REDIRECT_URI || "http://localhost:3000/authorize-handler"
       const oauthUrl = `https://marketplace.leadconnectorhq.com/oauth/chooselocation?response_type=code&redirect_uri=${encodeURIComponent(
-        process.env.GHL_APP_REDIRECT_URI || "http://localhost:3000/authorize-handler"
+        redirectUri
       )}&client_id=${
         process.env.GHL_APP_CLIENT_ID
       }&scope=conversations.write+conversations.readonly+conversations%2Fmessage.readonly+conversations%2Fmessage.write+contacts.readonly+contacts.write+locations.readonly`
 
-      // Logs de autorização simplificados
+      // ✅ NOVO: Logs detalhados da URL de autorização
+      console.log("🔍 === URL DE AUTORIZAÇÃO GERADA ===")
+      console.log("🔍 Redirect URI:", redirectUri)
+      console.log("🔍 Client ID:", process.env.GHL_APP_CLIENT_ID)
+      console.log("🔍 URL completa:", oauthUrl)
+      console.log("🔍 ================================")
+
       console.log(`🔄 Redirecionando para OAuth GHL com instanceName: ${instanceName}`)
       res.redirect(oauthUrl)
     } catch (error: any) {
@@ -193,20 +200,43 @@ app.get(
   authRateLimiter, // Rate limiting para autenticação
   async (req: Request, res: Response) => {
     try {
-      const {code} = req.query
-      console.log("🔐 Handler de autorização chamado com code:", code)
+      const {code, error, error_description} = req.query
+      console.log("🔐 Handler de autorização chamado")
+      console.log("🔍 === PARÂMETROS RECEBIDOS ===")
+      console.log("🔍 Code:", code ? `✅ ${code.toString().substring(0, 10)}...` : "❌ AUSENTE")
+      console.log("🔍 Error:", error || "✅ Nenhum")
+      console.log("🔍 Error Description:", error_description || "✅ Nenhum")
+      console.log("🔍 ===========================")
+
+      // ✅ NOVO: Verificar se há erro do OAuth
+      if (error) {
+        console.error("❌ === ERRO DO OAUTH GHL ===")
+        console.error("❌ Error:", error)
+        console.error("❌ Description:", error_description)
+        console.error("❌ ========================")
+
+        return res.status(400).json({
+          success: false,
+          message: `Erro de autorização: ${error}`,
+          error_description: error_description
+        })
+      }
 
       if (code) {
         // Logs de debug para cookies recebidos
-        console.log(`🍪 Cookies recebidos:`, req.cookies)
+        console.log(`🍪 === COOKIES RECEBIDOS ===`)
+        console.log(`🍪 Cookies completos:`, req.cookies)
         console.log(`🍪 tempInstanceName:`, req.cookies?.tempInstanceName)
         console.log(`🍪 tempTag:`, req.cookies?.tempTag)
+        console.log(`🍪 ========================`)
 
         // Recupera o instanceName e tag dos cookies
         const instanceName = req.cookies?.tempInstanceName || "default"
         const tag = req.cookies?.tempTag || null
+        console.log(`🔍 === DADOS RECUPERADOS ===`)
         console.log(`🔍 InstanceName recuperado do cookie: ${instanceName}`)
         console.log(`🔍 Tag recuperada do cookie: ${tag || "não fornecida"}`)
+        console.log(`🔍 ========================`)
 
         // Limpa os cookies temporários
         res.clearCookie("tempInstanceName")
@@ -216,11 +246,39 @@ app.get(
         await ghl.authorizationHandler(code as string, instanceName, tag)
         res.redirect("https://app.gohighlevel.com/")
       } else {
+        console.error("❌ Código de autorização ausente na requisição")
         res.status(400).send("Código de autorização ausente.")
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro no handler de autorização:", error)
-      res.status(500).send("Erro durante a autorização.")
+      
+      // ✅ NOVO: Tratamento específico para erros de código inválido
+      if (error?.message?.includes("Código de autorização já foi usado")) {
+        console.error("❌ === ERRO DE CÓDIGO JÁ USADO ===")
+        console.error("❌ Usuário tentou reutilizar um código de autorização")
+        console.error("❌ Solução: Iniciar nova instalação")
+        console.error("❌ =================================")
+        
+        res.status(400).json({
+          success: false,
+          message: "Código de autorização já foi usado. Por favor, inicie uma nova instalação.",
+          error: "AUTHORIZATION_CODE_ALREADY_USED",
+          solution: "Inicie uma nova instalação do app"
+        })
+      } else if (error?.message?.includes("expirou")) {
+        res.status(400).json({
+          success: false,
+          message: "Código de autorização expirou. Por favor, inicie uma nova instalação.",
+          error: "AUTHORIZATION_CODE_EXPIRED",
+          solution: "Inicie uma nova instalação do app"
+        })
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "Erro durante a autorização. Tente novamente.",
+          error: "AUTHORIZATION_ERROR"
+        })
+      }
     }
   }
 )

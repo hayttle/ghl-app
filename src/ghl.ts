@@ -223,16 +223,41 @@ export class GHL {
     try {
       console.log("🔄 Gerando par de tokens de acesso...")
 
-      const resp = await axios.post(
-        `${process.env.GHL_API_DOMAIN}/oauth/token`,
-        qs.stringify({
-          client_id: process.env.GHL_APP_CLIENT_ID,
-          client_secret: process.env.GHL_APP_CLIENT_SECRET,
-          grant_type: "authorization_code",
-          code
-        }),
-        {headers: {"content-type": "application/x-www-form-urlencoded"}}
+      // ✅ NOVO: Validação das variáveis de ambiente antes da requisição
+      console.log("🔍 === VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE ===")
+      console.log("🔍 GHL_API_DOMAIN:", process.env.GHL_API_DOMAIN || "❌ NÃO CONFIGURADO")
+      console.log("🔍 GHL_APP_CLIENT_ID:", process.env.GHL_APP_CLIENT_ID ? "✅ CONFIGURADO" : "❌ NÃO CONFIGURADO")
+      console.log(
+        "🔍 GHL_APP_CLIENT_SECRET:",
+        process.env.GHL_APP_CLIENT_SECRET ? "✅ CONFIGURADO" : "❌ NÃO CONFIGURADO"
       )
+      console.log("🔍 GHL_APP_REDIRECT_URI:", process.env.GHL_APP_REDIRECT_URI || "❌ NÃO CONFIGURADO")
+      console.log("🔍 ========================================")
+
+      // ✅ NOVO: Validação do código de autorização
+      console.log("🔍 === VALIDAÇÃO DO CÓDIGO DE AUTORIZAÇÃO ===")
+      console.log("🔍 Código recebido:", code ? `✅ ${code.substring(0, 10)}...` : "❌ CÓDIGO VAZIO")
+      console.log("🔍 Tamanho do código:", code?.length || 0)
+      console.log("🔍 ==========================================")
+
+      const requestData = {
+        client_id: process.env.GHL_APP_CLIENT_ID,
+        client_secret: process.env.GHL_APP_CLIENT_SECRET,
+        grant_type: "authorization_code",
+        code
+      }
+
+      console.log("🔍 === DADOS DA REQUISIÇÃO ===")
+      console.log("🔍 URL:", `${process.env.GHL_API_DOMAIN}/oauth/token`)
+      console.log("🔍 client_id:", requestData.client_id)
+      console.log("🔍 client_secret:", requestData.client_secret ? "***CONFIGURADO***" : "❌ NÃO CONFIGURADO")
+      console.log("🔍 grant_type:", requestData.grant_type)
+      console.log("🔍 code:", requestData.code ? `***${requestData.code.substring(0, 10)}...***` : "❌ VAZIO")
+      console.log("🔍 ==========================")
+
+      const resp = await axios.post(`${process.env.GHL_API_DOMAIN}/oauth/token`, qs.stringify(requestData), {
+        headers: {"content-type": "application/x-www-form-urlencoded"}
+      })
 
       // ✅ NOVO: Logs detalhados da resposta da API GHL
       console.log("📡 === RESPOSTA COMPLETA DA API GHL ===")
@@ -347,7 +372,73 @@ export class GHL {
       console.log("🚀 Webhook configurado e pronto para receber mensagens!")
     } catch (error: any) {
       console.error("❌ Erro ao gerar tokens:", error?.response?.data || error)
-      throw error
+
+      // ✅ NOVO: Tratamento específico para diferentes tipos de erro
+      if (error?.response?.status === 400) {
+        const errorData = error.response.data
+        console.error("❌ === ERRO 400 - BAD REQUEST ===")
+        console.error("❌ Erro completo:", JSON.stringify(errorData, null, 2))
+
+        if (
+          errorData?.error === "invalid_grant" ||
+          errorData?.error_description?.includes("invalid") ||
+          errorData?.error_description?.includes("expired")
+        ) {
+          console.error("❌ PROBLEMA IDENTIFICADO: Código de autorização inválido!")
+          console.error("❌ Erro específico:", errorData?.error_description || errorData?.error)
+          console.error("❌ ======================================")
+          console.error("❌ DIAGNÓSTICO:")
+          console.error("   🔍 Código recebido:", code ? `${code.substring(0, 10)}...` : "NENHUM")
+          console.error("   🔍 Client ID:", process.env.GHL_APP_CLIENT_ID ? "✅ Configurado" : "❌ Não configurado")
+          console.error("   🔍 Client Secret:", process.env.GHL_APP_CLIENT_SECRET ? "✅ Configurado" : "❌ Não configurado")
+          console.error("   🔍 Redirect URI:", process.env.GHL_APP_REDIRECT_URI || "❌ Não configurado")
+          console.error("❌ ======================================")
+          console.error("❌ POSSÍVEIS CAUSAS:")
+          console.error("   1. 🚨 CÓDIGO JÁ USADO (mais provável) - Códigos OAuth2 são single-use")
+          console.error("   2. ⏰ Código expirado (válido por poucos minutos)")
+          console.error("   3. 🔗 Redirect URI incorreto")
+          console.error("   4. 🔑 Credenciais incorretas")
+          console.error("❌ ======================================")
+          console.error("❌ SOLUÇÃO:")
+          console.error("   📝 O usuário deve iniciar uma NOVA instalação")
+          console.error("   📝 Não reutilizar o mesmo link de autorização")
+          console.error("   📝 Completar o fluxo OAuth2 em uma única sessão")
+          console.error("❌ ======================================")
+
+          // ✅ NOVO: Erro mais específico baseado na descrição
+          if (errorData?.error_description?.includes("invalid")) {
+            throw new Error("Código de autorização já foi usado ou é inválido. Inicie uma nova instalação.")
+          } else if (errorData?.error_description?.includes("expired")) {
+            throw new Error("Código de autorização expirou. Inicie uma nova instalação.")
+          } else {
+            throw new Error(`Código de autorização inválido: ${errorData?.error_description || "Código já usado ou expirado"}`)
+          }
+        } else if (errorData?.error === "invalid_client") {
+          console.error("❌ PROBLEMA IDENTIFICADO: Client ID ou Client Secret incorretos!")
+          console.error("❌ Verifique as variáveis de ambiente:")
+          console.error("   - GHL_APP_CLIENT_ID")
+          console.error("   - GHL_APP_CLIENT_SECRET")
+          throw new Error("Client ID ou Client Secret incorretos")
+        } else {
+          console.error("❌ ERRO 400 não identificado:", errorData)
+          throw new Error(
+            `Erro de autorização: ${errorData?.error_description || errorData?.error || "Erro desconhecido"}`
+          )
+        }
+      } else if (error?.response?.status === 401) {
+        console.error("❌ === ERRO 401 - UNAUTHORIZED ===")
+        console.error("❌ Client ID ou Client Secret incorretos ou app não autorizado")
+        throw new Error("Credenciais inválidas - verifique Client ID e Client Secret")
+      } else if (error?.response?.status >= 500) {
+        console.error("❌ === ERRO DO SERVIDOR GHL ===")
+        console.error("❌ Problema no servidor do GoHighLevel")
+        throw new Error("Erro temporário do servidor GoHighLevel - tente novamente")
+      } else {
+        console.error("❌ === ERRO DESCONHECIDO ===")
+        console.error("❌ Status:", error?.response?.status)
+        console.error("❌ Dados:", error?.response?.data)
+        throw error
+      }
     }
   }
 }
