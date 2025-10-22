@@ -15,6 +15,7 @@ Sistema de integração bidirecional entre **GoHighLevel CRM** e **Evolution API
 - **🔐 OAuth2 GHL**: Integração oficial com marketplace GoHighLevel
 - **🆕 InstanceName Dinâmico**: Captura via rota intermediária e cookies
 - **🏷️ Parâmetro Tag**: Captura e armazenamento de tag personalizada na instalação ✅ **NOVO**
+- **🏷️ Tags em Contatos**: Aplicação automática de tag da instalação em contatos novos ✅ **NOVO**
 - **📱 Status de Mensagens**: Atualização automática para "delivered" ✅ **FUNCIONANDO**
 - **🗑️ Desinstalação Automática**: Via webhook GHL
 - **🧹 Validação Robusta**: InstanceName obrigatório e validações de segurança
@@ -490,7 +491,23 @@ curl "http://localhost:3000/integration/installations"
 8. **Salva** instalação no banco **incluindo a tag**
 9. **Limpa** cookies temporários
 
+### Aplicação de Tags em Contatos
+
+#### **Contatos Novos:**
+
+- ✅ **Tag aplicada automaticamente**: Contatos novos recebem a tag da instalação
+- ✅ **Tag única**: Apenas a tag da instalação é aplicada
+- ✅ **Organização automática**: Contatos organizados por instalação
+
+#### **Contatos Existentes:**
+
+- ✅ **Tags preservadas**: Contatos existentes mantêm suas tags atuais
+- ✅ **Sem modificação**: Não interfere com contatos já existentes
+- ✅ **Processamento normal**: Continua o fluxo normalmente
+
 ### Logs Esperados
+
+#### **Durante a Instalação:**
 
 ```
 🔐 Iniciando autorização com instanceName: backend_server e tag: cliente_123
@@ -500,6 +517,29 @@ curl "http://localhost:3000/integration/installations"
 🔍 Tag recuperada do cookie: cliente_123
 💾 tag: cliente_123
 ✅ Instalação salva com sucesso para a subconta: 73NtQAAH2EvgoqRsx6qJ
+```
+
+#### **Durante o Processamento de Mensagens:**
+
+**Para Contato Existente:**
+
+```
+✅ Contato existente encontrado: 4q2FZJEaoELpza7OVAnv
+🏷️ Contato existente encontrado - tag não será aplicada (apenas para contatos novos)
+```
+
+**Para Contato Novo:**
+
+```
+📝 Criando novo contato para: +557388389770
+🏷️ Tag da instalação encontrada: cliente_123
+📝 Payload para criação do contato: {
+  "locationId": "lP0PSedsr11qtEs9nowL",
+  "phone": "+557388389770",
+  "firstName": "WhatsApp",
+  "tags": ["cliente_123"]
+}
+✅ Novo contato criado: contact_123
 ```
 
 ## 🔧 Uso da Integração
@@ -684,6 +724,7 @@ npm run dev
 - **Sistema de Cookies**: Preserva dados durante redirecionamentos
 - **Validação Obrigatória**: `instanceName` é obrigatório para instalação
 - **Parâmetro Tag**: Captura e armazenamento de tag personalizada ✅ **NOVO**
+- **Tags em Contatos**: Aplicação automática de tag da instalação em contatos novos ✅ **NOVO**
 - **Integração Oficial GHL**: Usa marketplace oficial do GoHighLevel
 
 ### ✅ **Gestão de InstanceName Dinâmico**
@@ -691,6 +732,13 @@ npm run dev
 - **Captura Personalizada**: Cada cliente pode ter sua instância Evolution
 - **Armazenamento Seguro**: Via cookies temporários (5 minutos)
 - **Fallback Inteligente**: Valor padrão se necessário
+
+### ✅ **Sistema de Tags em Contatos**
+
+- **Tags Automáticas**: Contatos novos recebem automaticamente a tag da instalação
+- **Preservação de Contatos Existentes**: Contatos já existentes mantêm suas tags atuais
+- **Organização por Instalação**: Fácil identificação de contatos por cliente/projeto
+- **Tag Única**: Apenas a tag da instalação é aplicada (sem duplicatas)
 - **Validação Robusta**: Erro claro se `instanceName` não for fornecido
 
 ### ✅ **Sincronização Bidirecional**
@@ -1221,7 +1269,10 @@ curl "http://localhost:3000/authorize-start?instanceName=teste_manual&tag=client
 # 2. Verificar instalações (deve mostrar a tag)
 curl "http://localhost:3000/integration/installations"
 
-# 3. Testar envio de mensagem
+# 3. Enviar mensagem do WhatsApp para criar contato novo com tag
+# (O contato será criado automaticamente com a tag "cliente_teste")
+
+# 4. Testar envio de mensagem
 curl -X POST "http://localhost:3000/integration/send-message" \
   -H "Content-Type: application/json" \
   -H "X-GHL-Client-ID: seu_client_id_aqui" \
@@ -1233,7 +1284,7 @@ curl -X POST "http://localhost:3000/integration/send-message" \
     "messageId": "msg_123"
   }'
 
-# 4. Verificar status
+# 5. Verificar status
 curl "http://localhost:3000/integration/status"
 ```
 

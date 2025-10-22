@@ -32,6 +32,7 @@ dotenv.config()
 
 // ✅ NOVO: Declaração de tipo para o cache global de deduplicação
 declare global {
+  // eslint-disable-next-line no-unused-vars
   var recentProcessedMessages: {[key: string]: string} | undefined
 }
 
@@ -893,14 +894,19 @@ async function processOutboundMessageFromWhatsApp(instanceName: string, phoneNum
 
     if (contactSearchResponse.data.contacts && contactSearchResponse.data.contacts.length > 0) {
       // ✅ Contato existente encontrado
-      contactId = contactSearchResponse.data.contacts[0].id
+      const existingContact = contactSearchResponse.data.contacts[0]
+      contactId = existingContact.id
       console.log(`✅ Contato existente encontrado: ${contactId} para telefone: ${phoneNumber}`)
       console.log("📋 Dados do contato:", {
-        id: contactSearchResponse.data.contacts[0].id,
-        phone: contactSearchResponse.data.contacts[0].phone,
-        firstName: contactSearchResponse.data.contacts[0].firstName,
-        lastName: contactSearchResponse.data.contacts[0].lastName
+        id: existingContact.id,
+        phone: existingContact.phone,
+        firstName: existingContact.firstName,
+        lastName: existingContact.lastName,
+        tags: existingContact.tags
       })
+
+      // Contato existente - não aplica tag (apenas para contatos novos)
+      console.log("🏷️ Contato existente encontrado - tag não será aplicada (apenas para contatos novos)")
     } else {
       // ❌ Contato não encontrado - criar novo
       console.log(`🔄 Contato não encontrado, criando novo para telefone: ${phoneNumber}`)
@@ -910,6 +916,12 @@ async function processOutboundMessageFromWhatsApp(instanceName: string, phoneNum
         lastName: "WhatsApp"
       })
 
+      // Busca a tag da instalação para adicionar ao contato
+      const installationDetails = await ghl.model.getInstallationInfo(resourceId)
+      const installationTag = installationDetails?.tag
+
+      console.log("🏷️ Tag da instalação encontrada:", installationTag || "nenhuma")
+
       // ✅ CORREÇÃO: Usar axios diretamente com o token da instalação
       // ✅ CORREÇÃO: URL correta para GHL - /contacts/ com locationId no body
       const newContactResponse = await axios.post(
@@ -918,7 +930,8 @@ async function processOutboundMessageFromWhatsApp(instanceName: string, phoneNum
           phone: phoneNumber,
           firstName: "Contato",
           lastName: "WhatsApp",
-          locationId: resourceId
+          locationId: resourceId,
+          ...(installationTag && {tags: [installationTag]})
         },
         {
           headers: {
@@ -1338,6 +1351,7 @@ app.post(
       }
 
       // ✅ NOVO: Se chegou até aqui, é um evento não suportado
+      // eslint-disable-next-line no-unreachable
       console.log(`ℹ️ Evento não suportado ou processado com sucesso`)
       return res.status(200).json({
         success: true,

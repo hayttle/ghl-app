@@ -1,12 +1,18 @@
 import pool from "./db"
 
+// eslint-disable-next-line no-unused-vars
 export enum TokenType {
+  // eslint-disable-next-line no-unused-vars
   Bearer = "Bearer"
 }
 
+// eslint-disable-next-line no-unused-vars
 export enum IntegrationStatus {
+  // eslint-disable-next-line no-unused-vars
   Active = "active",
+  // eslint-disable-next-line no-unused-vars
   Error = "error",
+  // eslint-disable-next-line no-unused-vars
   Pending = "pending"
 }
 
