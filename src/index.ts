@@ -24,6 +24,7 @@ import {
 
 import {securityConfig, validateSecurityConfig} from "./security-config"
 import {ghlCredentialsValidator} from "./ghl-credentials-validator"
+import {getSenderPhoneNumber, formatPhoneNumber} from "./evolution-webhook-helper"
 
 const path = __dirname + "/ui/dist/"
 
@@ -1150,7 +1151,12 @@ app.post(
         // ✅ CORREÇÃO ROBUSTA: Usar múltiplos identificadores para deduplicação
         const messageId = messageData.key.id
         const timestamp = messageData.messageTimestamp || Date.now()
-        const senderPhone = messageData.key.remoteJid
+
+        // ✅ NOVO: Extrair número do sender baseado em addressingMode
+        const senderInfo = getSenderPhoneNumber(messageData.key)
+        const senderPhone = senderInfo.phoneNumber
+        console.log(`🔍 Sender extraído para deduplicação: ${senderPhone} (${senderInfo.source})`)
+
         const recipientPhone = messageData.key.participant
 
         // ✅ NOVO: Criar chave de deduplicação mais robusta
@@ -1259,8 +1265,10 @@ app.post(
           outboundMessageText = "[MENSAGEM]"
         }
 
-        // Extrair telefone do destinatário (contato)
-        const participant = messageData.key.participant || messageData.key.remoteJid
+        // ✅ NOVO: Extrair telefone do destinatário baseado em addressingMode
+        // Para fromMe=true, o destinatário é quem recebe a mensagem (participant ou sender baseado em addressingMode)
+        const recipientInfo = getSenderPhoneNumber(messageData.key)
+        const participant = messageData.key.participant || recipientInfo.phoneNumber
         if (!participant) {
           console.error("❌ Não foi possível identificar o destinatário da mensagem")
           return res.status(400).json({
@@ -1269,7 +1277,8 @@ app.post(
           })
         }
 
-        const recipientPhoneNumber = `+${participant.replace("@s.whatsapp.net", "")}`
+        console.log(`🔍 Destinatário extraído: ${participant} (participant ou ${recipientInfo.source})`)
+        const recipientPhoneNumber = formatPhoneNumber(participant)
         const instanceName = req.body.instance
 
         console.log(`📤 Mensagem da empresa para: ${recipientPhoneNumber}`)
@@ -1326,8 +1335,11 @@ app.post(
 
         console.log(`📥 Mensagem recebida: ${messageType} - ${inboundMessageText}`)
 
-        // Extrair telefone do remetente
-        const senderPhoneNumber = messageData.key.remoteJid
+        // ✅ NOVO: Extrair telefone do remetente baseado em addressingMode
+        const senderInfo = getSenderPhoneNumber(messageData.key)
+        const senderPhoneNumber = senderInfo.phoneNumber
+        console.log(`🔍 Remetente extraído: ${senderPhoneNumber} (${senderInfo.source})`)
+
         if (!senderPhoneNumber) {
           console.error("❌ Não foi possível identificar o remetente da mensagem")
           return res.status(400).json({
@@ -1336,7 +1348,7 @@ app.post(
           })
         }
 
-        const inboundPhoneNumber = `+${senderPhoneNumber.replace("@s.whatsapp.net", "")}`
+        const inboundPhoneNumber = formatPhoneNumber(senderPhoneNumber)
         const instanceName = req.body.instance
         const pushName = messageData.pushName || "Contato WhatsApp"
 
@@ -1483,6 +1495,22 @@ app.post(
       if (result.success) {
         res.json(result)
       } else {
+        // Tratamento específico para erro de sessão da Evolution API
+        if (result.error && result.error.includes("SessionError: No sessions")) {
+          console.error("❌ ERRO DE SESSÃO EVOLUTION API - Instância desconectada")
+          return res.status(503).json({
+            success: false,
+            message: "Instância do WhatsApp desconectada",
+            error:
+              "A instância 'centalgoias' não possui sessões ativas. Verifique se o WhatsApp está conectado no painel da Evolution API.",
+            details: {
+              instanceName: installationDetails.evolutionInstanceName,
+              locationId: locationId,
+              suggestion: "Reconecte a instância no painel da Evolution API ou escaneie o QR Code novamente"
+            }
+          })
+        }
+
         res.status(400).json(result)
       }
     } catch (error: any) {
@@ -1540,6 +1568,51 @@ app.get("/health", (req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     version: "2.0.0"
   })
+})
+
+// Endpoint para verificar status da instância Evolution API
+app.get("/evolution-status/:instanceName", async (req: Request, res: Response) => {
+  try {
+    const {instanceName} = req.params
+
+    if (!instanceName) {
+      return res.status(400).json({
+        success: false,
+        message: "InstanceName é obrigatório"
+      })
+    }
+
+    const axios = require("axios")
+
+    // Verifica status da instância
+    const statusResponse = await axios.get(
+      `${baseIntegrationConfig.evolutionApiUrl}/instance/connectionState/${instanceName}`,
+      {
+        headers: {
+          apikey: baseIntegrationConfig.evolutionApiKey
+        },
+        timeout: 10000
+      }
+    )
+
+    console.log(`📊 Status da instância ${instanceName}:`, statusResponse.data)
+
+    res.json({
+      success: true,
+      instanceName: instanceName,
+      status: statusResponse.data,
+      timestamp: new Date().toISOString()
+    })
+  } catch (error: any) {
+    console.error(`❌ Erro ao verificar status da instância ${req.params.instanceName}:`, error.message)
+
+    res.status(500).json({
+      success: false,
+      message: "Erro ao verificar status da instância",
+      error: error.message,
+      instanceName: req.params.instanceName
+    })
+  }
 })
 
 // Endpoint para verificar configurações
