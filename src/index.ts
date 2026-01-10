@@ -1381,7 +1381,11 @@ app.post(
           const timeSinceLastProcessed = Date.now() - lastProcessedTime.getTime()
 
           console.log(`🔄 MENSAGEM DUPLICADA DETECTADA - Chave: ${dedupKeyGHL}`)
-          console.log(`🔄 Última processada: ${lastProcessedTime.toISOString()} (${Math.round(timeSinceLastProcessed / 1000)}s atrás)`)
+          console.log(
+            `🔄 Última processada: ${lastProcessedTime.toISOString()} (${Math.round(
+              timeSinceLastProcessed / 1000
+            )}s atrás)`
+          )
           console.log(`🔄 Ignorando para evitar duplicação no GHL - esta mensagem já foi processada`)
 
           // Se foi processada nos últimos 5 minutos, ignorar completamente
@@ -1420,7 +1424,10 @@ app.post(
         }, 300000) // 5 minutos
 
         console.log(`📊 Total de mensagens em cache: ${Object.keys(global.recentProcessedMessages).length}`)
-        console.log(`📊 Chaves fromMe no cache:`, Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_")))
+        console.log(
+          `📊 Chaves fromMe no cache:`,
+          Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_"))
+        )
 
         const instanceName = req.body.instance
 
@@ -1608,6 +1615,97 @@ app.post(
           success: false,
           message: "Faltando parâmetros: locationId, contactId e message são obrigatórios"
         })
+      }
+
+      // ✅ CRÍTICO: Verificar se esta mensagem veio de um webhook fromMe ANTES de enviar
+      // Quando o GHL cria uma mensagem via API (de um webhook fromMe), ele pode chamar esta rota
+      // Precisamos verificar o cache de deduplicação para evitar enviar novamente
+      try {
+        // Buscar informações do contato para obter o telefone
+        const contactResponse = await ghl.requests(locationId).get(`/contacts/${contactId}`, {
+          headers: {Version: "2021-07-28"}
+        })
+
+        const contact = contactResponse.data
+        const phoneNumber = contact.phone
+
+        if (phoneNumber) {
+          // Criar a mesma chave usada no webhook Evolution: fromme_{telefone}_{hash}
+          const normalizedMessage = (message || "").trim().toLowerCase()
+          const messageHash = Buffer.from(normalizedMessage).toString("base64").substring(0, 20)
+          const formattedPhone = phoneNumber.replace(/\D/g, "")
+          const dedupKeyToCheck = `fromme_${formattedPhone}_${messageHash}`
+
+          console.log(`🔍 Verificando duplicação na rota /send-message-evolution - Chave: ${dedupKeyToCheck}`)
+
+          // Verificar se esta mensagem está no cache de deduplicação (vem de fromMe)
+          if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKeyToCheck]) {
+            const lastProcessedTime = new Date(global.recentProcessedMessages[dedupKeyToCheck])
+            const timeSinceLastProcessed = Date.now() - lastProcessedTime.getTime()
+
+            console.log(`🚫 === MENSAGEM FROMME DETECTADA NA ROTA /send-message-evolution ===`)
+            console.log(`🚫 Chave encontrada no cache: ${dedupKeyToCheck}`)
+            console.log(`🚫 Última processada: ${lastProcessedTime.toISOString()} (${Math.round(timeSinceLastProcessed / 1000)}s atrás)`)
+            console.log(`🚫 Esta mensagem JÁ FOI ENVIADA pelo WhatsApp (fromMe=true)`)
+            console.log(`🚫 BLOQUEANDO envio via Evolution API para evitar duplicação`)
+
+            if (timeSinceLastProcessed < 300000) {
+              // Mensagem foi processada há menos de 5 minutos - bloquear envio
+              return res.status(200).json({
+                success: true,
+                message: "Mensagem fromMe ignorada - já foi enviada pelo WhatsApp. Não enviando via Evolution API para evitar duplicação",
+                reason: "fromMe_already_sent",
+                action: "blocked_evolution_api_send",
+                dedupKey: dedupKeyToCheck,
+                lastProcessed: lastProcessedTime.toISOString(),
+                timeSinceLastProcessed: Math.round(timeSinceLastProcessed / 1000)
+              })
+            }
+          }
+
+          // ✅ Verificação adicional: se mensagem foi criada recentemente (<10s), pode ser fromMe
+          // Mesmo que não esteja no cache (race condition), bloquear mensagens muito recentes
+          const messageTimestamp = req.body.timestamp || req.body.createdAt || Date.now()
+          const now = Date.now()
+          const timeDiff =
+            typeof messageTimestamp === "string"
+              ? now - new Date(messageTimestamp).getTime()
+              : now - (messageTimestamp || now)
+
+          if (timeDiff > 0 && timeDiff < 10000) {
+            console.log(`🚫 Mensagem muito recente (${Math.round(timeDiff / 1000)}s) na rota /send-message-evolution`)
+            console.log(`🚫 Provável mensagem fromMe - BLOQUEANDO envio para evitar duplicação`)
+
+            // Verificar se há mensagens fromMe recentes para o mesmo telefone
+            if (global.recentProcessedMessages) {
+              const fromMeKeys = Object.keys(global.recentProcessedMessages).filter((key) => {
+                if (key.startsWith("fromme_")) {
+                  const keyParts = key.split("_")
+                  if (keyParts.length >= 3) {
+                    const keyPhone = keyParts[1]
+                    return keyPhone === formattedPhone
+                  }
+                }
+                return false
+              })
+
+              if (fromMeKeys.length > 0) {
+                console.log(`🚫 Mensagens fromMe recentes encontradas para o mesmo telefone:`, fromMeKeys.length)
+                return res.status(200).json({
+                  success: true,
+                  message: "Mensagem muito recente bloqueada (<10s) - não enviando via Evolution API. Provável mensagem fromMe já enviada pelo WhatsApp",
+                  reason: "fromMe_too_recent_route_check",
+                  action: "blocked_evolution_api_send",
+                  timeDiff: Math.round(timeDiff / 1000),
+                  threshold: "10 segundos"
+                })
+              }
+            }
+          }
+        }
+      } catch (checkError: any) {
+        // Se houver erro ao verificar, continuar com o fluxo normal (não bloquear)
+        console.log(`⚠️ Erro ao verificar deduplicação (continuando):`, checkError.message)
       }
 
       // Busca o instanceName específico desta instalação
