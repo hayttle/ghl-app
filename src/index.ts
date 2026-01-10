@@ -725,9 +725,16 @@ app.post(
               ? now - new Date(messageTimestamp).getTime()
               : now - (messageTimestamp || now)
 
-          // ✅ CORREÇÃO CRÍTICA: Verificar sempre no cache de deduplicação (não apenas mensagens recentes)
-          // Quando criamos uma mensagem no GHL via POST /conversations/messages (de uma mensagem fromMe),
-          // o GHL dispara um webhook OutboundMessage. Precisamos detectar e ignorar isso.
+          // ✅ CORREÇÃO CRÍTICA: Verificar se esta mensagem veio de um webhook fromMe
+          // Quando uma mensagem fromMe é enviada pelo WhatsApp:
+          // 1. Evolution API detecta e dispara webhook Evolution (fromMe=true)
+          // 2. Webhook Evolution cria mensagem no GHL via POST /conversations/messages
+          // 3. GHL dispara webhook OutboundMessage
+          // 4. Webhook GHL recebe e tenta enviar via Evolution API ❌ (DUPLICAÇÃO!)
+          //
+          // SOLUÇÃO: Se a mensagem está no cache de deduplicação do webhook Evolution,
+          // significa que veio de um fromMe e JÁ FOI ENVIADA pelo WhatsApp.
+          // NÃO devemos enviar novamente via Evolution API - apenas ignorar.
 
           // Criar a mesma chave usada no webhook Evolution (SEM timestamp)
           // Normalizar mensagem e telefone da mesma forma que no webhook Evolution
@@ -737,80 +744,146 @@ app.post(
           const formattedPhone = phoneNumber.replace(/\D/g, "")
           const dedupKeyToCheck = `fromme_${formattedPhone}_${messageHash}`
 
-          console.log(`🔍 Verificando duplicação no cache - Chave: ${dedupKeyToCheck}`)
+          console.log(`🔍 === VERIFICANDO SE MENSAGEM VEIO DE FROMME ===`)
+          console.log(`🔍 Chave de verificação: ${dedupKeyToCheck}`)
+          console.log(`🔍 Telefone normalizado: ${formattedPhone}`)
+          console.log(`🔍 Hash da mensagem: ${messageHash}`)
+          console.log(`🔍 Mensagem original: ${message.substring(0, 50)}...`)
           console.log(`⏰ Mensagem criada há ${Math.round(timeDiff / 1000)}s`)
+          console.log(`📊 Total de chaves no cache: ${Object.keys(global.recentProcessedMessages || {}).length}`)
+          console.log(
+            `📊 Chaves fromMe no cache: ${
+              Object.keys(global.recentProcessedMessages || {}).filter((k) => k.startsWith("fromme_")).length
+            }`
+          )
 
-          // Verificar se há esta mensagem exata no cache de deduplicação do webhook Evolution
+          // ✅ BLOQUEIO CRÍTICO: Verificar se esta mensagem veio de um webhook fromMe
+          // Se estiver no cache, significa que foi criada via webhook Evolution (fromMe)
+          // e JÁ FOI ENVIADA pelo WhatsApp. NÃO devemos enviar novamente.
           if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKeyToCheck]) {
             const lastProcessedTime = new Date(global.recentProcessedMessages[dedupKeyToCheck])
             const timeSinceLastProcessed = now - lastProcessedTime.getTime()
 
-            console.log(`🔄 Mensagem duplicada detectada no cache!`)
-            console.log(`🔄 Chave: ${dedupKeyToCheck}`)
+            console.log(`🚫 === MENSAGEM FROMME DETECTADA - BLOQUEANDO ENVIO ===`)
+            console.log(`🚫 Chave encontrada no cache: ${dedupKeyToCheck}`)
             console.log(
-              `🔄 Última processada: ${lastProcessedTime.toISOString()} (${Math.round(
+              `🚫 Última processada: ${lastProcessedTime.toISOString()} (${Math.round(
                 timeSinceLastProcessed / 1000
               )}s atrás)`
             )
-            console.log(
-              `🔄 Ignorando para evitar duplicação - esta mensagem já foi processada via webhook Evolution (fromMe)`
-            )
-            console.log(`🔄 Detalhes: telefone=${phoneNumber}, hash=${messageHash}`)
-            console.log(
-              `🔄 Cache completo:`,
-              Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_"))
-            )
+            console.log(`🚫 Esta mensagem JÁ FOI ENVIADA pelo WhatsApp (fromMe=true)`)
+            console.log(`🚫 NÃO enviando via Evolution API para evitar duplicação`)
+            console.log(`🚫 Detalhes: telefone=${phoneNumber}, hash=${messageHash}`)
+            console.log(`🚫 Mensagem original: ${message.substring(0, 50)}...`)
 
+            // ✅ NÃO ENVIAR PARA EVOLUTION API - mensagem já foi enviada pelo WhatsApp
+            // ✅ Apenas retornar sucesso para sincronizar no GHL (já foi feito no webhook Evolution)
             return res.status(200).json({
               success: true,
-              message: "Mensagem recém-criada via API ignorada para evitar duplicação",
-              reason: "fromMe_already_processed",
+              message:
+                "Mensagem fromMe ignorada - já foi enviada pelo WhatsApp. Não enviando via Evolution API para evitar duplicação",
+              reason: "fromMe_already_sent",
+              action: "blocked_evolution_api_send",
               dedupKey: dedupKeyToCheck,
               lastProcessed: lastProcessedTime.toISOString(),
               timeSinceLastProcessed: Math.round(timeSinceLastProcessed / 1000)
             })
-          } else {
-            console.log(`ℹ️ Nenhuma mensagem similar encontrada no cache`)
-            console.log(`ℹ️ Telefone procurado: ${formattedPhone}, Hash: ${messageHash}`)
-            console.log(`ℹ️ Chave procurada: ${dedupKeyToCheck}`)
-            console.log(
-              `ℹ️ Chaves fromMe no cache:`,
-              Object.keys(global.recentProcessedMessages || {}).filter((k) => k.startsWith("fromme_"))
-            )
+          }
 
-            // ✅ VERIFICAÇÃO ADICIONAL: Se a mensagem foi criada há menos de 10 segundos e não está no cache,
-            // pode ser uma mensagem recém-criada via API que ainda não foi marcada no cache.
-            // Neste caso, também devemos ignorar para evitar duplicação
-            if (timeDiff > 0 && timeDiff < 10000) {
-              console.log(`⚠️ Mensagem muito recente (${Math.round(timeDiff / 1000)}s) mas não encontrada no cache`)
-              console.log(`⚠️ Pode ser uma mensagem recém-criada via API - verificando chaves similares...`)
+          // ✅ VERIFICAÇÃO CRÍTICA: Mensagens criadas há menos de 10 segundos SEMPRE BLOQUEAR
+          // Mensagens fromMe são sempre criadas IMEDIATAMENTE após o webhook Evolution (<5s)
+          // Se a mensagem foi criada há menos de 10 segundos, é CERTEZA que é fromMe
+          // SEMPRE bloquear para evitar duplicação - mensagens do GHL UI não são criadas tão rapidamente
+          if (timeDiff > 0 && timeDiff < 10000) {
+            console.log(`🚫 === MENSAGEM MUITO RECENTE DETECTADA (<10s) ===`)
+            console.log(`🚫 Mensagem criada há apenas ${Math.round(timeDiff / 1000)}s`)
+            console.log(`🚫 CERTEZA de ser mensagem fromMe - criada imediatamente após webhook Evolution`)
+            console.log(`🚫 BLOQUEANDO envio para Evolution API - mensagem já foi enviada pelo WhatsApp`)
+            console.log(`🚫 Timestamp recebido: ${req.body.timestamp || req.body.createdAt || "não fornecido"}`)
 
-              // Verificar se há alguma chave que começa com "fromme_" e tem o mesmo telefone (independente do hash)
-              // Isso pode indicar que a mensagem foi processada recentemente, mesmo com hash diferente
-              const similarPhoneKeys = Object.keys(global.recentProcessedMessages || {}).filter((key) => {
+            // Verificar se há mensagens fromMe no cache (qualquer uma recente)
+            if (global.recentProcessedMessages) {
+              const fromMeKeys = Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_"))
+              console.log(`🚫 Total de mensagens fromMe no cache: ${fromMeKeys.length}`)
+              if (fromMeKeys.length > 0) {
+                console.log(`🚫 Confirmado: há mensagens fromMe recentes no cache`)
+              }
+            }
+
+            return res.status(200).json({
+              success: true,
+              message:
+                "Mensagem muito recente bloqueada (<10s) - não enviando via Evolution API. Mensagem fromMe já foi enviada pelo WhatsApp.",
+              reason: "fromMe_too_recent_certain",
+              action: "blocked_evolution_api_send",
+              timeDiff: Math.round(timeDiff / 1000),
+              threshold: "10 segundos",
+              timestamp: req.body.timestamp || req.body.createdAt || null
+            })
+          }
+
+          // ✅ VERIFICAÇÃO ADICIONAL: Mensagens criadas há menos de 30 segundos com mensagens fromMe recentes
+          // Se há mensagens fromMe recentes para o mesmo telefone, bloquear também
+          if (timeDiff > 0 && timeDiff < 30000) {
+            console.log(`⚠️ Mensagem muito recente (${Math.round(timeDiff / 1000)}s) - Verificando se é fromMe...`)
+
+            // Verificar se há mensagens fromMe recentes para o mesmo telefone
+            if (global.recentProcessedMessages) {
+              const cacheMessages = global.recentProcessedMessages
+              const similarPhoneKeys = Object.keys(cacheMessages).filter((key) => {
                 if (key.startsWith("fromme_")) {
                   const keyParts = key.split("_")
                   if (keyParts.length >= 3) {
                     const keyPhone = keyParts[1]
-                    return keyPhone === formattedPhone
+                    // Verificar se tem o mesmo telefone (independente do hash)
+                    if (keyPhone === formattedPhone) {
+                      // Verificar quando foi processada
+                      const lastProcessed = cacheMessages[key]
+                      if (lastProcessed) {
+                        const lastProcessedTime = new Date(lastProcessed)
+                        const timeSinceProcessed = now - lastProcessedTime.getTime()
+                        // Mensagem processada há menos de 60 segundos
+                        return timeSinceProcessed < 60000
+                      }
+                      return true // Mesmo telefone, sem verificação de timestamp
+                    }
                   }
                 }
                 return false
               })
 
               if (similarPhoneKeys.length > 0) {
-                console.log(`🔄 Mensagens recentes para o mesmo telefone encontradas:`, similarPhoneKeys)
-                console.log(`🔄 Ignorando para evitar duplicação - pode ser mensagem recém-criada via API`)
+                console.log(`🚫 Mensagens fromMe recentes para o mesmo telefone encontradas:`, similarPhoneKeys)
+                console.log(`🚫 Mensagem criada há apenas ${Math.round(timeDiff / 1000)}s`)
+                console.log(`🚫 BLOQUEANDO envio para Evolution API - alta probabilidade de ser mensagem fromMe`)
+                console.log(`🚫 Telefone: ${formattedPhone}, Mensagens similares: ${similarPhoneKeys.length}`)
+
                 return res.status(200).json({
                   success: true,
-                  message: "Mensagem muito recente ignorada para evitar duplicação (verificação adicional)",
-                  reason: "fromMe_recent_check",
+                  message:
+                    "Mensagem muito recente bloqueada - não enviando via Evolution API. Provável mensagem fromMe já enviada pelo WhatsApp",
+                  reason: "fromMe_probable_recent",
+                  action: "blocked_evolution_api_send",
                   similarPhoneKeys: similarPhoneKeys.length,
-                  timeDiff: Math.round(timeDiff / 1000)
+                  timeDiff: Math.round(timeDiff / 1000),
+                  threshold: "30 segundos"
                 })
+              } else {
+                console.log(`ℹ️ Nenhuma mensagem fromMe encontrada para o mesmo telefone nos últimos 60s`)
+                console.log(`ℹ️ Mensagem criada há ${Math.round(timeDiff / 1000)}s - pode ser mensagem do GHL UI`)
               }
             }
           }
+
+          // Se não encontrou no cache e mensagem não é muito recente, continuar com o fluxo normal (mensagem vinda do GHL UI)
+          console.log(`✅ Mensagem NÃO encontrada no cache de fromMe`)
+          console.log(`✅ Mensagem criada há ${Math.round(timeDiff / 1000)}s (não é muito recente ou não é fromMe)`)
+          console.log(`✅ Continuando fluxo normal - mensagem veio do GHL UI (não é fromMe)`)
+          console.log(`✅ Telefone: ${formattedPhone}, Hash: ${messageHash}`)
+          console.log(
+            `✅ Chaves fromMe no cache para debug:`,
+            Object.keys(global.recentProcessedMessages || {}).filter((k) => k.startsWith("fromme_"))
+          )
 
           // Buscar conversa existente
           const conversationResponse = await ghl.requests(locationId).get(`/conversations/search/`, {
@@ -1425,9 +1498,16 @@ app.post(
           }
         }
 
-        // Marcar ANTES de processar com timestamp para controle de tempo
+        // ✅ CRÍTICO: Marcar NO CACHE ANTES de criar no GHL para evitar race condition
+        // Quando criamos no GHL, o GHL dispara webhook OutboundMessage imediatamente
+        // Precisamos garantir que a chave já esteja no cache antes disso acontecer
         global.recentProcessedMessages[dedupKeyGHL] = new Date().toISOString()
-        console.log(`✅ Mensagem marcada no cache ANTES de criar no GHL - Chave: ${dedupKeyGHL}`)
+        console.log(`✅ === MENSAGEM MARCADA NO CACHE ANTES DE CRIAR NO GHL ===`)
+        console.log(`✅ Chave: ${dedupKeyGHL}`)
+        console.log(`✅ Telefone normalizado: ${normalizedPhone}`)
+        console.log(`✅ Hash da mensagem: ${messageHash}`)
+        console.log(`✅ Mensagem original: ${outboundMessageText.substring(0, 50)}...`)
+        console.log(`✅ Timestamp: ${new Date().toISOString()}`)
 
         // Limpar após 5 minutos para permitir reprocessamento de mensagens antigas
         setTimeout(() => {
@@ -1437,7 +1517,10 @@ app.post(
           }
         }, 300000) // 5 minutos
 
-        // Processar mensagem da empresa
+        // ✅ IMPORTANTE: Esta função APENAS cria a mensagem no GHL para sincronizar
+        // NÃO envia para Evolution API - a mensagem JÁ FOI ENVIADA pelo WhatsApp
+        console.log(`📤 Processando mensagem fromMe - APENAS criando no GHL para sincronizar`)
+        console.log(`📤 NÃO enviando para Evolution API - mensagem já foi enviada pelo WhatsApp`)
         const result = await processOutboundMessageFromWhatsApp(instanceName, recipientPhoneNumber, outboundMessageText)
 
         if (result.success) {
