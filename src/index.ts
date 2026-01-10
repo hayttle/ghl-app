@@ -720,43 +720,76 @@ app.post(
           // o GHL dispara um webhook OutboundMessage. Precisamos detectar e ignorar isso.
           const messageTimestamp = req.body.timestamp || req.body.createdAt || Date.now()
           const now = Date.now()
-          const timeDiff = typeof messageTimestamp === 'string' 
-            ? now - new Date(messageTimestamp).getTime()
-            : now - (messageTimestamp || now)
+          const timeDiff =
+            typeof messageTimestamp === "string"
+              ? now - new Date(messageTimestamp).getTime()
+              : now - (messageTimestamp || now)
 
-          // Se a mensagem foi criada há menos de 15 segundos, pode ser uma mensagem recém-criada via API
-          // Verificar no cache de deduplicação se há uma mensagem similar já processada
-          if (timeDiff < 15000 && timeDiff > 0) {
-            console.log(`⏰ Mensagem muito recente (${Math.round(timeDiff/1000)}s) - Verificando duplicação...`)
-            
+          // Se a mensagem foi criada há menos de 60 segundos, verificar no cache de deduplicação
+          if (timeDiff < 60000 && timeDiff > 0) {
+            console.log(`⏰ Mensagem muito recente (${Math.round(timeDiff / 1000)}s) - Verificando duplicação...`)
+
+            // Criar o mesmo hash de mensagem usado no webhook Evolution
+            // Normalizar mensagem e telefone da mesma forma que no webhook Evolution
+            const normalizedMessage = (message || "").trim().toLowerCase()
+            const messageHash = Buffer.from(normalizedMessage).toString("base64").substring(0, 20)
+            // Normalizar telefone removendo todos caracteres não numéricos (incluindo +)
+            const formattedPhone = phoneNumber.replace(/\D/g, "")
+
             // Verificar se há mensagens similares no cache de deduplicação do webhook Evolution
             if (global.recentProcessedMessages) {
               const recentKeys = Object.keys(global.recentProcessedMessages)
-              const formattedPhone = phoneNumber.replace(/\D/g, '')
-              
+
+              // Verificar se existe uma chave que começa com "fromme_" e tem o mesmo telefone e hash
               const similarMessages = recentKeys.filter((key) => {
-                const keyParts = key.split("_")
-                if (keyParts.length >= 4) {
-                  const keyRecipientPhone = keyParts[2]
-                  const keyTimestamp = parseInt(keyParts[3])
-                  const keyTimeDiff = now - (keyTimestamp * 1000)
-                  
-                  // Verificar se há uma mensagem recente (últimos 20 segundos) para o mesmo destinatário
-                  return keyRecipientPhone === formattedPhone && keyTimeDiff < 20000
+                if (key.startsWith("fromme_")) {
+                  const keyParts = key.split("_")
+                  if (keyParts.length >= 4) {
+                    const keyPhone = keyParts[1]
+                    const keyHash = keyParts[2]
+                    const keyTimestamp = parseInt(keyParts[3]) * 1000
+                    const keyTimeDiff = now - keyTimestamp
+
+                    // Mesmo telefone + mesmo hash + menos de 60 segundos
+                    const isMatch = keyPhone === formattedPhone && keyHash === messageHash && keyTimeDiff < 60000
+
+                    if (isMatch) {
+                      console.log(`🔍 Match encontrado - Key: ${key}, TimeDiff: ${Math.round(keyTimeDiff / 1000)}s`)
+                    }
+
+                    return isMatch
+                  }
                 }
                 return false
               })
 
               if (similarMessages.length > 0) {
                 console.log(`🔄 Mensagem similar recente detectada no cache:`, similarMessages)
-                console.log(`🔄 Ignorando para evitar duplicação - esta mensagem já foi processada via webhook Evolution (fromMe)`)
-                console.log(`🔄 Detalhes: telefone=${phoneNumber}, tempo=${Math.round(timeDiff/1000)}s`)
+                console.log(
+                  `🔄 Ignorando para evitar duplicação - esta mensagem já foi processada via webhook Evolution (fromMe)`
+                )
+                console.log(
+                  `🔄 Detalhes: telefone=${phoneNumber}, hash=${messageHash}, tempo=${Math.round(timeDiff / 1000)}s`
+                )
+                console.log(
+                  `🔄 Cache completo:`,
+                  Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_"))
+                )
                 return res.status(200).json({
                   success: true,
                   message: "Mensagem recém-criada via API ignorada para evitar duplicação",
                   reason: "fromMe_already_processed",
-                  similarMessages: similarMessages.length
+                  similarMessages: similarMessages.length,
+                  formattedPhone,
+                  messageHash
                 })
+              } else {
+                console.log(`ℹ️ Nenhuma mensagem similar encontrada no cache`)
+                console.log(`ℹ️ Telefone procurado: ${formattedPhone}, Hash: ${messageHash}`)
+                console.log(
+                  `ℹ️ Chaves fromMe no cache:`,
+                  Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_"))
+                )
               }
             }
           }
@@ -1330,6 +1363,59 @@ app.post(
         console.log(`📤 Mensagem da empresa para: ${recipientPhoneNumber}`)
         console.log(`💬 Conteúdo: ${outboundMessageText}`)
         console.log(`🏢 Instância: ${instanceName}`)
+
+        // ✅ CORREÇÃO: Marcar mensagem no cache ANTES de criar no GHL para evitar duplicação
+        // Normalizar telefone (remover + e caracteres não numéricos) e criar hash da mensagem
+        const normalizedPhone = recipientPhoneNumber.replace(/\D/g, "")
+        const normalizedMessage = outboundMessageText.trim().toLowerCase()
+        const messageHash = Buffer.from(normalizedMessage).toString("base64").substring(0, 20)
+        const dedupKeyGHL = `fromme_${normalizedPhone}_${messageHash}_${Math.floor(Date.now() / 1000)}`
+
+        if (!global.recentProcessedMessages) {
+          global.recentProcessedMessages = {}
+        }
+
+        // Verificar se já existe uma mensagem similar muito recente (últimos 30 segundos)
+        const nowCheck = Date.now()
+        const existingKeys = Object.keys(global.recentProcessedMessages || {})
+        const similarRecentMessages = existingKeys.filter((key) => {
+          if (key.startsWith("fromme_")) {
+            const keyParts = key.split("_")
+            if (keyParts.length >= 4) {
+              const keyPhone = keyParts[1]
+              const keyHash = keyParts[2]
+              const keyTimestamp = parseInt(keyParts[3]) * 1000
+              const keyTimeDiff = nowCheck - keyTimestamp
+
+              // Mesmo telefone + mesmo hash de mensagem + menos de 30 segundos
+              const normalizedPhoneCheck = recipientPhoneNumber.replace(/\D/g, "")
+              return keyPhone === normalizedPhoneCheck && keyHash === messageHash && keyTimeDiff < 30000
+            }
+          }
+          return false
+        })
+
+        if (similarRecentMessages.length > 0) {
+          console.log(`🔄 Mensagem duplicada detectada no cache antes de processar:`, similarRecentMessages)
+          console.log(`🔄 Ignorando para evitar duplicação`)
+          return res.status(200).json({
+            success: true,
+            message: "Mensagem duplicada ignorada - já processada recentemente",
+            dedupKey: dedupKeyGHL
+          })
+        }
+
+        // Marcar ANTES de processar
+        global.recentProcessedMessages[dedupKeyGHL] = new Date().toISOString()
+        console.log(`✅ Mensagem marcada no cache ANTES de criar no GHL - Chave: ${dedupKeyGHL}`)
+
+        // Limpar após 60 segundos
+        setTimeout(() => {
+          if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKeyGHL]) {
+            delete global.recentProcessedMessages[dedupKeyGHL]
+            console.log(`🧹 Chave de deduplicação removida: ${dedupKeyGHL}`)
+          }
+        }, 60000)
 
         // Processar mensagem da empresa
         const result = await processOutboundMessageFromWhatsApp(instanceName, recipientPhoneNumber, outboundMessageText)
