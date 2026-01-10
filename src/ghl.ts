@@ -45,28 +45,23 @@ export class GHL {
       let result = Buffer.alloc(0, 0)
       while (result.length < keySize + ivSize) {
         const hasher = createHash("md5")
-        result = Buffer.concat([
-          result,
-          hasher
-            .update(
-              Buffer.concat([
-                result.subarray(-ivSize),
-                Buffer.from(process.env.GHL_APP_SSO_KEY as string, "utf-8"),
-                salt
-              ])
-            )
-            .digest()
-        ])
+        const concatInput = Buffer.concat([
+          result.subarray(-ivSize),
+          Buffer.from(process.env.GHL_APP_SSO_KEY as string, "utf-8"),
+          salt
+        ] as any[])
+        const digestResult = hasher.update(concatInput as any).digest() as Buffer
+        result = Buffer.concat([result, digestResult] as any[])
       }
 
       const decipher = createDecipheriv(
         "aes-256-cbc",
-        result.subarray(0, keySize),
-        result.subarray(keySize, keySize + ivSize)
+        result.subarray(0, keySize) as any,
+        result.subarray(keySize, keySize + ivSize) as any
       )
 
-      const decrypted = decipher.update(cipherText)
-      const finalDecrypted = Buffer.concat([decrypted, decipher.final()])
+      const decrypted = decipher.update(cipherText as any) as Buffer
+      const finalDecrypted = Buffer.concat([decrypted, decipher.final() as Buffer] as any[])
       return JSON.parse(finalDecrypted.toString())
     } catch (error) {
       console.error("Error decrypting SSO data:", error)
@@ -442,9 +437,13 @@ export class GHL {
         console.error("❌ === ERRO DESCONHECIDO ===")
         console.error("❌ Status:", error?.response?.status)
         console.error("❌ Dados:", error?.response?.data)
-        
+
         // ✅ NOVO: Verificar se é erro de banco de dados
-        if (error?.code === '42703' && error?.message?.includes('column') && error?.message?.includes('does not exist')) {
+        if (
+          error?.code === "42703" &&
+          error?.message?.includes("column") &&
+          error?.message?.includes("does not exist")
+        ) {
           console.error("❌ === ERRO DE BANCO DE DADOS ===")
           console.error("❌ Coluna não existe no banco de dados")
           console.error("❌ Erro:", error.message)
@@ -453,10 +452,12 @@ export class GHL {
           console.error("   1. Execute o script SQL para adicionar a coluna 'tag'")
           console.error("   2. Ou execute: ALTER TABLE installations ADD COLUMN tag VARCHAR(255);")
           console.error("❌ =====================================")
-          
-          throw new Error("Erro de banco de dados: Coluna 'tag' não existe. Execute o script SQL para adicionar a coluna.")
+
+          throw new Error(
+            "Erro de banco de dados: Coluna 'tag' não existe. Execute o script SQL para adicionar a coluna."
+          )
         }
-        
+
         throw error
       }
     }
