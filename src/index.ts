@@ -715,6 +715,52 @@ app.post(
             })
           }
 
+          // ✅ CORREÇÃO: Verificar se esta mensagem foi criada recentemente via API (fromMe)
+          // Quando criamos uma mensagem no GHL via POST /conversations/messages (de uma mensagem fromMe),
+          // o GHL dispara um webhook OutboundMessage. Precisamos detectar e ignorar isso.
+          const messageTimestamp = req.body.timestamp || req.body.createdAt || Date.now()
+          const now = Date.now()
+          const timeDiff = typeof messageTimestamp === 'string' 
+            ? now - new Date(messageTimestamp).getTime()
+            : now - (messageTimestamp || now)
+
+          // Se a mensagem foi criada há menos de 15 segundos, pode ser uma mensagem recém-criada via API
+          // Verificar no cache de deduplicação se há uma mensagem similar já processada
+          if (timeDiff < 15000 && timeDiff > 0) {
+            console.log(`⏰ Mensagem muito recente (${Math.round(timeDiff/1000)}s) - Verificando duplicação...`)
+            
+            // Verificar se há mensagens similares no cache de deduplicação do webhook Evolution
+            if (global.recentProcessedMessages) {
+              const recentKeys = Object.keys(global.recentProcessedMessages)
+              const formattedPhone = phoneNumber.replace(/\D/g, '')
+              
+              const similarMessages = recentKeys.filter((key) => {
+                const keyParts = key.split("_")
+                if (keyParts.length >= 4) {
+                  const keyRecipientPhone = keyParts[2]
+                  const keyTimestamp = parseInt(keyParts[3])
+                  const keyTimeDiff = now - (keyTimestamp * 1000)
+                  
+                  // Verificar se há uma mensagem recente (últimos 20 segundos) para o mesmo destinatário
+                  return keyRecipientPhone === formattedPhone && keyTimeDiff < 20000
+                }
+                return false
+              })
+
+              if (similarMessages.length > 0) {
+                console.log(`🔄 Mensagem similar recente detectada no cache:`, similarMessages)
+                console.log(`🔄 Ignorando para evitar duplicação - esta mensagem já foi processada via webhook Evolution (fromMe)`)
+                console.log(`🔄 Detalhes: telefone=${phoneNumber}, tempo=${Math.round(timeDiff/1000)}s`)
+                return res.status(200).json({
+                  success: true,
+                  message: "Mensagem recém-criada via API ignorada para evitar duplicação",
+                  reason: "fromMe_already_processed",
+                  similarMessages: similarMessages.length
+                })
+              }
+            }
+          }
+
           // Buscar conversa existente
           const conversationResponse = await ghl.requests(locationId).get(`/conversations/search/`, {
             params: {query: phoneNumber},
