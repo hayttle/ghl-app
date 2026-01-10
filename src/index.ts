@@ -1620,14 +1620,21 @@ app.post(
       // ✅ CRÍTICO: Verificar se esta mensagem veio de um webhook fromMe ANTES de enviar
       // Quando o GHL cria uma mensagem via API (de um webhook fromMe), ele pode chamar esta rota
       // Precisamos verificar o cache de deduplicação para evitar enviar novamente
+      console.log(`🔍 === INÍCIO VERIFICAÇÃO DEDUPLICAÇÃO /send-message-evolution ===`)
+      console.log(`🔍 LocationId: ${locationId}, ContactId: ${contactId}, Message: ${message}`)
+      console.log(`🔍 Cache atual:`, global.recentProcessedMessages ? Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_")) : "vazio")
+
       try {
         // Buscar informações do contato para obter o telefone
+        console.log(`🔍 Buscando contato ${contactId} para verificação de deduplicação...`)
         const contactResponse = await ghl.requests(locationId).get(`/contacts/${contactId}`, {
           headers: {Version: "2021-07-28"}
         })
 
         const contact = contactResponse.data
         const phoneNumber = contact.phone
+
+        console.log(`🔍 Telefone encontrado: ${phoneNumber}`)
 
         if (phoneNumber) {
           // Criar a mesma chave usada no webhook Evolution: fromme_{telefone}_{hash}
@@ -1636,7 +1643,12 @@ app.post(
           const formattedPhone = phoneNumber.replace(/\D/g, "")
           const dedupKeyToCheck = `fromme_${formattedPhone}_${messageHash}`
 
-          console.log(`🔍 Verificando duplicação na rota /send-message-evolution - Chave: ${dedupKeyToCheck}`)
+          console.log(`🔍 Verificando duplicação na rota /send-message-evolution`)
+          console.log(`🔍 Chave: ${dedupKeyToCheck}`)
+          console.log(`🔍 Telefone normalizado: ${formattedPhone}`)
+          console.log(`🔍 Hash da mensagem: ${messageHash}`)
+          console.log(`🔍 Mensagem normalizada: ${normalizedMessage}`)
+          console.log(`🔍 Chaves fromMe no cache:`, global.recentProcessedMessages ? Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_")) : [])
 
           // Verificar se esta mensagem está no cache de deduplicação (vem de fromMe)
           if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKeyToCheck]) {
@@ -1645,22 +1657,32 @@ app.post(
 
             console.log(`🚫 === MENSAGEM FROMME DETECTADA NA ROTA /send-message-evolution ===`)
             console.log(`🚫 Chave encontrada no cache: ${dedupKeyToCheck}`)
-            console.log(`🚫 Última processada: ${lastProcessedTime.toISOString()} (${Math.round(timeSinceLastProcessed / 1000)}s atrás)`)
+            console.log(
+              `🚫 Última processada: ${lastProcessedTime.toISOString()} (${Math.round(
+                timeSinceLastProcessed / 1000
+              )}s atrás)`
+            )
             console.log(`🚫 Esta mensagem JÁ FOI ENVIADA pelo WhatsApp (fromMe=true)`)
             console.log(`🚫 BLOQUEANDO envio via Evolution API para evitar duplicação`)
 
             if (timeSinceLastProcessed < 300000) {
               // Mensagem foi processada há menos de 5 minutos - bloquear envio
+              console.log(`🚫 RETORNANDO - Mensagem bloqueada por estar no cache`)
               return res.status(200).json({
                 success: true,
-                message: "Mensagem fromMe ignorada - já foi enviada pelo WhatsApp. Não enviando via Evolution API para evitar duplicação",
+                message:
+                  "Mensagem fromMe ignorada - já foi enviada pelo WhatsApp. Não enviando via Evolution API para evitar duplicação",
                 reason: "fromMe_already_sent",
                 action: "blocked_evolution_api_send",
                 dedupKey: dedupKeyToCheck,
                 lastProcessed: lastProcessedTime.toISOString(),
                 timeSinceLastProcessed: Math.round(timeSinceLastProcessed / 1000)
               })
+            } else {
+              console.log(`ℹ️ Mensagem no cache mas muito antiga (${Math.round(timeSinceLastProcessed / 1000)}s) - permitindo envio`)
             }
+          } else {
+            console.log(`✅ Mensagem NÃO encontrada no cache exato - continuando verificação adicional...`)
           }
 
           // ✅ Verificação adicional: se mensagem foi criada recentemente (<10s), pode ser fromMe
@@ -1672,9 +1694,11 @@ app.post(
               ? now - new Date(messageTimestamp).getTime()
               : now - (messageTimestamp || now)
 
+          console.log(`🔍 Verificação adicional - TimeDiff: ${Math.round(timeDiff / 1000)}s`)
+
           if (timeDiff > 0 && timeDiff < 10000) {
             console.log(`🚫 Mensagem muito recente (${Math.round(timeDiff / 1000)}s) na rota /send-message-evolution`)
-            console.log(`🚫 Provável mensagem fromMe - BLOQUEANDO envio para evitar duplicação`)
+            console.log(`🚫 Provável mensagem fromMe - verificando mensagens similares...`)
 
             // Verificar se há mensagens fromMe recentes para o mesmo telefone
             if (global.recentProcessedMessages) {
@@ -1689,24 +1713,40 @@ app.post(
                 return false
               })
 
+              console.log(`🔍 Mensagens fromMe encontradas para o mesmo telefone: ${fromMeKeys.length}`)
+              console.log(`🔍 Chaves:`, fromMeKeys)
+
               if (fromMeKeys.length > 0) {
                 console.log(`🚫 Mensagens fromMe recentes encontradas para o mesmo telefone:`, fromMeKeys.length)
+                console.log(`🚫 BLOQUEANDO envio para evitar duplicação`)
                 return res.status(200).json({
                   success: true,
-                  message: "Mensagem muito recente bloqueada (<10s) - não enviando via Evolution API. Provável mensagem fromMe já enviada pelo WhatsApp",
+                  message:
+                    "Mensagem muito recente bloqueada (<10s) - não enviando via Evolution API. Provável mensagem fromMe já enviada pelo WhatsApp",
                   reason: "fromMe_too_recent_route_check",
                   action: "blocked_evolution_api_send",
                   timeDiff: Math.round(timeDiff / 1000),
-                  threshold: "10 segundos"
+                  threshold: "10 segundos",
+                  similarKeys: fromMeKeys.length
                 })
               }
             }
+          } else {
+            console.log(`✅ Mensagem não é muito recente (${Math.round(timeDiff / 1000)}s) - continuando fluxo normal`)
           }
+
+          console.log(`✅ Verificação de deduplicação concluída - nenhuma duplicação detectada`)
+        } else {
+          console.log(`⚠️ Telefone não encontrado no contato - continuando fluxo normal`)
         }
       } catch (checkError: any) {
         // Se houver erro ao verificar, continuar com o fluxo normal (não bloquear)
-        console.log(`⚠️ Erro ao verificar deduplicação (continuando):`, checkError.message)
+        console.error(`❌ Erro ao verificar deduplicação:`, checkError.message)
+        console.error(`❌ Stack:`, checkError.stack)
+        console.log(`⚠️ Continuando fluxo normal devido ao erro na verificação`)
       }
+
+      console.log(`🔍 === FIM VERIFICAÇÃO DEDUPLICAÇÃO /send-message-evolution ===`)
 
       // Busca o instanceName específico desta instalação
       const installationDetails = await ghl.model.getInstallationInfo(locationId)
