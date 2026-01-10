@@ -1318,104 +1318,6 @@ app.post(
       if (isFromMe) {
         console.log("📤 MENSAGEM FROM_ME DETECTADA - Processando como mensagem da empresa...")
 
-        // ✅ CORREÇÃO ROBUSTA: Usar múltiplos identificadores para deduplicação
-        const messageId = messageData.key.id
-        const timestamp = messageData.messageTimestamp || Date.now()
-
-        // ✅ NOVO: Extrair número do sender baseado em addressingMode
-        const senderInfo = getSenderPhoneNumber(messageData.key)
-        const senderPhone = senderInfo.phoneNumber
-        console.log(`🔍 Sender extraído para deduplicação: ${senderPhone} (${senderInfo.source})`)
-
-        const recipientPhone = messageData.key.participant
-
-        // ✅ NOVO: Criar chave de deduplicação mais robusta
-        const dedupKey = `${messageId}_${senderPhone}_${recipientPhone}_${timestamp}`
-
-        console.log(`🔍 Verificando duplicação - Chave: ${dedupKey}`)
-        console.log(`📋 Detalhes:`, {
-          messageId,
-          timestamp: new Date(timestamp * 1000).toISOString(),
-          senderPhone,
-          recipientPhone,
-          fromMe: messageData.key.fromMe
-        })
-
-        // ✅ NOVO: Verificar se já processamos esta mensagem específica
-        if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKey]) {
-          console.log(`🔄 MENSAGEM DUPLICADA DETECTADA - Chave: ${dedupKey}`)
-          console.log(`🔄 Última processada em: ${global.recentProcessedMessages[dedupKey]}`)
-          console.log(`🔄 Ignorando para evitar duplicação no GHL`)
-          console.log(`🔄 Cache atual:`, global.recentProcessedMessages)
-          return res.status(200).json({
-            success: true,
-            message: "Mensagem duplicada ignorada para evitar duplicação no GHL",
-            dedupKey: dedupKey,
-            messageId: messageId
-          })
-        }
-
-        // ✅ NOVO: Verificação adicional - se a mensagem tem timestamp muito recente, pode ser duplicada
-        const now = Date.now()
-        const messageTime = timestamp * 1000 // Converter para milissegundos
-        const timeDiff = now - messageTime
-
-        console.log(`⏰ Verificação de tempo:`, {
-          agora: new Date(now).toISOString(),
-          mensagem: new Date(messageTime).toISOString(),
-          diferenca_ms: timeDiff,
-          diferenca_segundos: Math.round(timeDiff / 1000)
-        })
-
-        // ✅ NOVO: Se a mensagem é muito recente (menos de 5 segundos), verificar se não é duplicada
-        if (timeDiff < 5000) {
-          console.log(`⚠️ MENSAGEM MUITO RECENTE - Verificando duplicação por tempo...`)
-
-          // Verificar se há mensagens similares nos últimos 10 segundos
-          const recentKeys = Object.keys(global.recentProcessedMessages || {})
-          const similarMessages = recentKeys.filter((key) => {
-            const keyParts = key.split("_")
-            if (keyParts.length >= 4) {
-              const keySenderPhone = keyParts[1]
-              const keyRecipientPhone = keyParts[2]
-              const keyTimestamp = parseInt(keyParts[3])
-              const keyTimeDiff = now - keyTimestamp * 1000
-
-              return keySenderPhone === senderPhone && keyRecipientPhone === recipientPhone && keyTimeDiff < 10000 // 10 segundos
-            }
-            return false
-          })
-
-          if (similarMessages.length > 0) {
-            console.log(`🔄 MENSAGEM SIMILAR RECENTE DETECTADA:`, similarMessages)
-            console.log(`🔄 Ignorando para evitar duplicação no GHL`)
-            return res.status(200).json({
-              success: true,
-              message: "Mensagem similar recente ignorada para evitar duplicação no GHL",
-              similarMessages: similarMessages,
-              dedupKey: dedupKey
-            })
-          }
-        }
-
-        // ✅ NOVO: Marcar esta mensagem como processada usando a chave robusta
-        if (!global.recentProcessedMessages) {
-          global.recentProcessedMessages = {}
-        }
-        global.recentProcessedMessages[dedupKey] = new Date().toISOString()
-
-        // ✅ NOVO: Limpar mensagens antigas (mais de 120 segundos) para evitar acúmulo
-        setTimeout(() => {
-          if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKey]) {
-            delete global.recentProcessedMessages[dedupKey]
-            console.log(`🧹 Mensagem antiga removida da cache de deduplicação: ${dedupKey}`)
-          }
-        }, 120000) // 120 segundos
-
-        console.log(`✅ Mensagem marcada como processada - Chave: ${dedupKey}`)
-        console.log(`📊 Total de mensagens em cache: ${Object.keys(global.recentProcessedMessages).length}`)
-        console.log(`📊 Cache atual:`, global.recentProcessedMessages)
-
         // Extrair dados da mensagem enviada pela empresa
         let outboundMessageText = ""
 
@@ -1449,14 +1351,9 @@ app.post(
 
         console.log(`🔍 Destinatário extraído: ${participant} (participant ou ${recipientInfo.source})`)
         const recipientPhoneNumber = formatPhoneNumber(participant)
-        const instanceName = req.body.instance
 
-        console.log(`📤 Mensagem da empresa para: ${recipientPhoneNumber}`)
-        console.log(`💬 Conteúdo: ${outboundMessageText}`)
-        console.log(`🏢 Instância: ${instanceName}`)
-
-        // ✅ CORREÇÃO CRÍTICA: Marcar mensagem no cache ANTES de criar no GHL para evitar duplicação
-        // Usar chave SEM timestamp para permitir verificação independente do tempo exato
+        // ✅ CRÍTICO: Criar chave de deduplicação ANTES de qualquer processamento
+        // Usar a MESMA chave que será usada no webhook GHL: fromme_{telefone}_{hash}
         // Normalizar telefone (remover + e caracteres não numéricos) e criar hash da mensagem
         const normalizedPhone = recipientPhoneNumber.replace(/\D/g, "")
         const normalizedMessage = outboundMessageText.trim().toLowerCase()
@@ -1464,32 +1361,37 @@ app.post(
         // Chave sem timestamp: apenas telefone + hash - permite verificação independente do tempo
         const dedupKeyGHL = `fromme_${normalizedPhone}_${messageHash}`
 
+        console.log(`🔍 Verificando duplicação - Chave: ${dedupKeyGHL}`)
+        console.log(`📋 Detalhes:`, {
+          messageId: messageData.key.id,
+          recipientPhone: normalizedPhone,
+          messageHash: messageHash,
+          messageText: outboundMessageText.substring(0, 50),
+          fromMe: messageData.key.fromMe
+        })
+
         if (!global.recentProcessedMessages) {
           global.recentProcessedMessages = {}
         }
 
-        // Verificar se já existe uma mensagem idêntica (mesmo telefone + mesmo hash)
-        // Não depende de timestamp, apenas do conteúdo
+        // ✅ CRÍTICO: Verificar se já existe uma mensagem idêntica ANTES de processar
+        // Se já foi processada recentemente, NÃO criar no GHL para evitar duplicação
         if (global.recentProcessedMessages[dedupKeyGHL]) {
           const lastProcessedTime = new Date(global.recentProcessedMessages[dedupKeyGHL])
           const timeSinceLastProcessed = Date.now() - lastProcessedTime.getTime()
 
-          console.log(`🔄 Mensagem duplicada detectada no cache antes de processar`)
-          console.log(`🔄 Chave: ${dedupKeyGHL}`)
-          console.log(
-            `🔄 Última processada: ${lastProcessedTime.toISOString()} (${Math.round(
-              timeSinceLastProcessed / 1000
-            )}s atrás)`
-          )
+          console.log(`🔄 MENSAGEM DUPLICADA DETECTADA - Chave: ${dedupKeyGHL}`)
+          console.log(`🔄 Última processada: ${lastProcessedTime.toISOString()} (${Math.round(timeSinceLastProcessed / 1000)}s atrás)`)
+          console.log(`🔄 Ignorando para evitar duplicação no GHL - esta mensagem já foi processada`)
 
-          // Se foi processada nos últimos 5 minutos, ignorar
+          // Se foi processada nos últimos 5 minutos, ignorar completamente
           if (timeSinceLastProcessed < 300000) {
-            console.log(`🔄 Ignorando para evitar duplicação`)
             return res.status(200).json({
               success: true,
-              message: "Mensagem duplicada ignorada - já processada recentemente",
+              message: "Mensagem duplicada ignorada - já foi processada recentemente",
               dedupKey: dedupKeyGHL,
-              lastProcessed: lastProcessedTime.toISOString()
+              lastProcessed: lastProcessedTime.toISOString(),
+              timeSinceLastProcessed: Math.round(timeSinceLastProcessed / 1000)
             })
           } else {
             // Se foi processada há mais de 5 minutos, limpar e permitir processamento
@@ -1516,6 +1418,15 @@ app.post(
             console.log(`🧹 Chave de deduplicação removida após 5 minutos: ${dedupKeyGHL}`)
           }
         }, 300000) // 5 minutos
+
+        console.log(`📊 Total de mensagens em cache: ${Object.keys(global.recentProcessedMessages).length}`)
+        console.log(`📊 Chaves fromMe no cache:`, Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_")))
+
+        const instanceName = req.body.instance
+
+        // ✅ A verificação e marcação no cache já foi feita acima
+        // A chave dedupKeyGHL já foi criada e marcada no cache ANTES de processar
+        // As variáveis outboundMessageText e recipientPhoneNumber já foram extraídas acima
 
         // ✅ IMPORTANTE: Esta função APENAS cria a mensagem no GHL para sincronizar
         // NÃO envia para Evolution API - a mensagem JÁ FOI ENVIADA pelo WhatsApp
