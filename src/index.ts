@@ -1620,35 +1620,15 @@ app.post(
       // ✅ CRÍTICO: Verificar se esta mensagem veio de um webhook fromMe ANTES de enviar
       // Quando o GHL cria uma mensagem via API (de um webhook fromMe), ele pode chamar esta rota
       // Precisamos verificar o cache de deduplicação para evitar enviar novamente
-      console.log(`🔍 === INÍCIO VERIFICAÇÃO DEDUPLICAÇÃO /send-message-evolution ===`)
-      console.log(`🔍 LocationId: ${locationId}, ContactId: ${contactId}, Message: ${message}`)
-      console.log(
-        `🔍 Cache atual:`,
-        global.recentProcessedMessages
-          ? Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_"))
-          : "vazio"
-      )
-
       try {
         // Buscar informações do contato para obter o telefone
-        console.log(`🔍 Buscando contato ${contactId} para verificação de deduplicação...`)
         const contactResponse = await ghl.requests(locationId).get(`/contacts/${contactId}`, {
           headers: {Version: "2021-07-28"}
         })
 
-        console.log(`🔍 Resposta completa do contato:`, JSON.stringify(contactResponse.data, null, 2))
-        // ✅ CORREÇÃO: A API do GHL pode retornar { contact: {...} } ou {...} dependendo do endpoint
+        // ✅ CORREÇÃO: A API do GHL retorna { contact: {...} } não apenas {...}
         const contact = contactResponse.data.contact || contactResponse.data
         const phoneNumber = contact?.phone
-
-        console.log(`🔍 Estrutura do contato:`, {
-          hasContact: !!contactResponse.data.contact,
-          hasData: !!contactResponse.data,
-          dataKeys: contactResponse.data ? Object.keys(contactResponse.data) : [],
-          contactKeys: contact ? Object.keys(contact) : [],
-          phoneNumber: phoneNumber
-        })
-        console.log(`🔍 Telefone encontrado: ${phoneNumber}`)
 
         if (phoneNumber) {
           // Criar a mesma chave usada no webhook Evolution: fromme_{telefone}_{hash}
@@ -1656,18 +1636,6 @@ app.post(
           const messageHash = Buffer.from(normalizedMessage).toString("base64").substring(0, 20)
           const formattedPhone = phoneNumber.replace(/\D/g, "")
           const dedupKeyToCheck = `fromme_${formattedPhone}_${messageHash}`
-
-          console.log(`🔍 Verificando duplicação na rota /send-message-evolution`)
-          console.log(`🔍 Chave: ${dedupKeyToCheck}`)
-          console.log(`🔍 Telefone normalizado: ${formattedPhone}`)
-          console.log(`🔍 Hash da mensagem: ${messageHash}`)
-          console.log(`🔍 Mensagem normalizada: ${normalizedMessage}`)
-          console.log(
-            `🔍 Chaves fromMe no cache:`,
-            global.recentProcessedMessages
-              ? Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_"))
-              : []
-          )
 
           // Verificar se esta mensagem está no cache de deduplicação (vem de fromMe)
           if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKeyToCheck]) {
@@ -1717,12 +1685,7 @@ app.post(
               ? now - new Date(messageTimestamp).getTime()
               : now - (messageTimestamp || now)
 
-          console.log(`🔍 Verificação adicional - TimeDiff: ${Math.round(timeDiff / 1000)}s`)
-
           if (timeDiff > 0 && timeDiff < 10000) {
-            console.log(`🚫 Mensagem muito recente (${Math.round(timeDiff / 1000)}s) na rota /send-message-evolution`)
-            console.log(`🚫 Provável mensagem fromMe - verificando mensagens similares...`)
-
             // Verificar se há mensagens fromMe recentes para o mesmo telefone
             if (global.recentProcessedMessages) {
               const fromMeKeys = Object.keys(global.recentProcessedMessages).filter((key) => {
@@ -1736,12 +1699,8 @@ app.post(
                 return false
               })
 
-              console.log(`🔍 Mensagens fromMe encontradas para o mesmo telefone: ${fromMeKeys.length}`)
-              console.log(`🔍 Chaves:`, fromMeKeys)
-
               if (fromMeKeys.length > 0) {
-                console.log(`🚫 Mensagens fromMe recentes encontradas para o mesmo telefone:`, fromMeKeys.length)
-                console.log(`🚫 BLOQUEANDO envio para evitar duplicação`)
+                console.log(`🚫 Mensagem muito recente (<10s) com fromMe recentes - bloqueando envio`)
                 return res.status(200).json({
                   success: true,
                   message:
@@ -1749,27 +1708,16 @@ app.post(
                   reason: "fromMe_too_recent_route_check",
                   action: "blocked_evolution_api_send",
                   timeDiff: Math.round(timeDiff / 1000),
-                  threshold: "10 segundos",
-                  similarKeys: fromMeKeys.length
+                  threshold: "10 segundos"
                 })
               }
             }
-          } else {
-            console.log(`✅ Mensagem não é muito recente (${Math.round(timeDiff / 1000)}s) - continuando fluxo normal`)
           }
-
-          console.log(`✅ Verificação de deduplicação concluída - nenhuma duplicação detectada`)
-        } else {
-          console.log(`⚠️ Telefone não encontrado no contato - continuando fluxo normal`)
         }
       } catch (checkError: any) {
         // Se houver erro ao verificar, continuar com o fluxo normal (não bloquear)
-        console.error(`❌ Erro ao verificar deduplicação:`, checkError.message)
-        console.error(`❌ Stack:`, checkError.stack)
-        console.log(`⚠️ Continuando fluxo normal devido ao erro na verificação`)
+        console.error(`❌ Erro ao verificar deduplicação (continuando):`, checkError.message)
       }
-
-      console.log(`🔍 === FIM VERIFICAÇÃO DEDUPLICAÇÃO /send-message-evolution ===`)
 
       // Busca o instanceName específico desta instalação
       const installationDetails = await ghl.model.getInstallationInfo(locationId)
