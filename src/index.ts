@@ -1622,7 +1622,12 @@ app.post(
       // Precisamos verificar o cache de deduplicação para evitar enviar novamente
       console.log(`🔍 === INÍCIO VERIFICAÇÃO DEDUPLICAÇÃO /send-message-evolution ===`)
       console.log(`🔍 LocationId: ${locationId}, ContactId: ${contactId}, Message: ${message}`)
-      console.log(`🔍 Cache atual:`, global.recentProcessedMessages ? Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_")) : "vazio")
+      console.log(
+        `🔍 Cache atual:`,
+        global.recentProcessedMessages
+          ? Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_"))
+          : "vazio"
+      )
 
       try {
         // Buscar informações do contato para obter o telefone
@@ -1631,9 +1636,18 @@ app.post(
           headers: {Version: "2021-07-28"}
         })
 
-        const contact = contactResponse.data
-        const phoneNumber = contact.phone
+        console.log(`🔍 Resposta completa do contato:`, JSON.stringify(contactResponse.data, null, 2))
+        // ✅ CORREÇÃO: A API do GHL pode retornar { contact: {...} } ou {...} dependendo do endpoint
+        const contact = contactResponse.data.contact || contactResponse.data
+        const phoneNumber = contact?.phone
 
+        console.log(`🔍 Estrutura do contato:`, {
+          hasContact: !!contactResponse.data.contact,
+          hasData: !!contactResponse.data,
+          dataKeys: contactResponse.data ? Object.keys(contactResponse.data) : [],
+          contactKeys: contact ? Object.keys(contact) : [],
+          phoneNumber: phoneNumber
+        })
         console.log(`🔍 Telefone encontrado: ${phoneNumber}`)
 
         if (phoneNumber) {
@@ -1648,7 +1662,12 @@ app.post(
           console.log(`🔍 Telefone normalizado: ${formattedPhone}`)
           console.log(`🔍 Hash da mensagem: ${messageHash}`)
           console.log(`🔍 Mensagem normalizada: ${normalizedMessage}`)
-          console.log(`🔍 Chaves fromMe no cache:`, global.recentProcessedMessages ? Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_")) : [])
+          console.log(
+            `🔍 Chaves fromMe no cache:`,
+            global.recentProcessedMessages
+              ? Object.keys(global.recentProcessedMessages).filter((k) => k.startsWith("fromme_"))
+              : []
+          )
 
           // Verificar se esta mensagem está no cache de deduplicação (vem de fromMe)
           if (global.recentProcessedMessages && global.recentProcessedMessages[dedupKeyToCheck]) {
@@ -1679,7 +1698,11 @@ app.post(
                 timeSinceLastProcessed: Math.round(timeSinceLastProcessed / 1000)
               })
             } else {
-              console.log(`ℹ️ Mensagem no cache mas muito antiga (${Math.round(timeSinceLastProcessed / 1000)}s) - permitindo envio`)
+              console.log(
+                `ℹ️ Mensagem no cache mas muito antiga (${Math.round(
+                  timeSinceLastProcessed / 1000
+                )}s) - permitindo envio`
+              )
             }
           } else {
             console.log(`✅ Mensagem NÃO encontrada no cache exato - continuando verificação adicional...`)
