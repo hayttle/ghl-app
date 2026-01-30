@@ -102,7 +102,7 @@ app.get("/ghl-buttom-audio.js", (req: Request, res: Response) => {
   const fs = require("fs")
   const path = require("path")
   const filePath = path.join(process.cwd(), "public", "ghl-buttom-audio.js")
-  
+
   try {
     if (fs.existsSync(filePath)) {
       res.setHeader("Content-Type", "application/javascript")
@@ -201,7 +201,7 @@ app.get(
         redirectUri
       )}&client_id=${
         process.env.GHL_APP_CLIENT_ID
-      }&scope=conversations.write+conversations.readonly+conversations%2Fmessage.readonly+conversations%2Fmessage.write+contacts.readonly+contacts.write+locations.readonly`
+      }&scope=conversations.write+conversations.readonly+conversations%2Fmessage.readonly+conversations%2Fmessage.write+contacts.readonly+contacts.write+locations.readonly+medias.write&version_id=697c9f03024b173803ac34d6`
 
       // ✅ NOVO: Logs detalhados da URL de autorização
       console.log("🔍 === URL DE AUTORIZAÇÃO GERADA ===")
