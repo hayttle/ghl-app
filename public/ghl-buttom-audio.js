@@ -1,4 +1,5 @@
-;(function () {
+/* eslint-env browser */
+(function () {
   const N8N_URL = "https://webhooks.posicionamentodigital.com/webhook/audio"
 
   function injectEvoMic() {
@@ -181,3 +182,4 @@
 
   setInterval(injectEvoMic, 2000)
 })()
+
