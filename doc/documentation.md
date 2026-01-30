@@ -78,6 +78,9 @@ GHL_APP_CLIENT_ID=seu_client_id
 GHL_APP_CLIENT_SECRET=seu_client_secret
 GHL_APP_REDIRECT_URI=http://localhost:3000/authorize-handler
 GHL_API_DOMAIN=https://services.leadconnectorhq.com
+GHL_MARKETPLACE_URL=https://marketplace.leadconnectorhq.com
+GHL_OAUTH_SCOPE=conversations.write+conversations.readonly+conversations%2Fmessage.readonly+conversations%2Fmessage.write+contacts.readonly+contacts.write+locations.readonly+medias.write
+GHL_OAUTH_VERSION_ID=697c9f03024b173803ac34d6
 
 # Configurações Evolution API
 EVOLUTION_API_URL=https://sua-evolution-api.com

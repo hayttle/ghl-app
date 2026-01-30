@@ -197,16 +197,23 @@ app.get(
 
       // Redireciona para o OAuth do GHL
       const redirectUri = process.env.GHL_APP_REDIRECT_URI || "http://localhost:3000/authorize-handler"
-      const oauthUrl = `https://marketplace.leadconnectorhq.com/oauth/chooselocation?response_type=code&redirect_uri=${encodeURIComponent(
+      const marketplaceUrl = process.env.GHL_MARKETPLACE_URL || "https://marketplace.leadconnectorhq.com"
+      const oauthScope = process.env.GHL_OAUTH_SCOPE || "conversations.write+conversations.readonly+conversations%2Fmessage.readonly+conversations%2Fmessage.write+contacts.readonly+contacts.write+locations.readonly+medias.write"
+      const oauthVersionId = process.env.GHL_OAUTH_VERSION_ID || "697c9f03024b173803ac34d6"
+      
+      const oauthUrl = `${marketplaceUrl}/oauth/chooselocation?response_type=code&redirect_uri=${encodeURIComponent(
         redirectUri
       )}&client_id=${
         process.env.GHL_APP_CLIENT_ID
-      }&scope=conversations.write+conversations.readonly+conversations%2Fmessage.readonly+conversations%2Fmessage.write+contacts.readonly+contacts.write+locations.readonly+medias.write&version_id=697c9f03024b173803ac34d6`
+      }&scope=${oauthScope}&version_id=${oauthVersionId}`
 
       // ✅ NOVO: Logs detalhados da URL de autorização
       console.log("🔍 === URL DE AUTORIZAÇÃO GERADA ===")
+      console.log("🔍 Marketplace URL:", marketplaceUrl)
       console.log("🔍 Redirect URI:", redirectUri)
       console.log("🔍 Client ID:", process.env.GHL_APP_CLIENT_ID)
+      console.log("🔍 OAuth Scope:", oauthScope)
+      console.log("🔍 OAuth Version ID:", oauthVersionId)
       console.log("🔍 URL completa:", oauthUrl)
       console.log("🔍 ================================")
 
