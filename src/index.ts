@@ -124,6 +124,33 @@ app.get("/ghl-buttom-audio.js", (req: Request, res: Response) => {
   }
 })
 
+// Rota para servir o script de player de áudio do GHL
+app.get("/ghl-audio-player.js", (req: Request, res: Response) => {
+  const fs = require("fs")
+  const path = require("path")
+  const filePath = path.join(process.cwd(), "public", "ghl-audio-player.js")
+
+  try {
+    if (fs.existsSync(filePath)) {
+      res.setHeader("Content-Type", "application/javascript")
+      res.setHeader("Cache-Control", "public, max-age=3600")
+      res.sendFile(filePath)
+    } else {
+      res.status(404).json({
+        success: false,
+        message: "Arquivo não encontrado"
+      })
+    }
+  } catch (error: any) {
+    console.error("Erro ao servir arquivo ghl-audio-player.js:", error)
+    res.status(500).json({
+      success: false,
+      message: "Erro ao servir arquivo",
+      error: error.message
+    })
+  }
+})
+
 const ghl = new GHL()
 
 // Configuração base do serviço de integração
